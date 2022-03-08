@@ -6,7 +6,7 @@ import numpy as np
 
 @st.cache
 def get_data():
-    return zarr.load('.data/Zarr/array_XS.zarr')
+    return zarr.load('.data/Zarr/testZarr.zip')
 
 
 z = get_data()
