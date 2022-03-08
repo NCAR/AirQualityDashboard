@@ -16,6 +16,6 @@ st.write("""
 Description of how to use page \n
 Description of what variables are
 """)
-test = str(z[0:1])
+test = str(z[0][0])
 st.write(test)
 
