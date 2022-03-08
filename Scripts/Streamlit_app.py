@@ -6,7 +6,7 @@ import numpy as np
 
 @st.cache
 def get_data():
-    return zarr.load('.Data/Zarr/testZarr.zip')
+    return zarr.load('https://github.com/mcasali/AirQualityDashboard/blob/main/Data/Zarr/testZarr.zip')
 
 
 z = get_data()
