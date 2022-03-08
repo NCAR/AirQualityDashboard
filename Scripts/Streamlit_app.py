@@ -16,4 +16,5 @@ st.write("""
 Description of how to use page \n
 Description of what variables are
 """)
+st.write(z)
 
