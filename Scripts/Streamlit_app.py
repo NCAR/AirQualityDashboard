@@ -6,7 +6,7 @@ import numpy as np
 
 @st.cache
 def get_data():
-    return pd.read_parquet('/Data/Parquet/testPar2.parquet')
+    return pd.read_parquet('https://github.com/mcasali/AirQualityDashboard/blob/main/Data/Parquet/testPar2.parquet')
 
 
 df = get_data()
