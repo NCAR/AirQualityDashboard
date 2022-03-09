@@ -4,7 +4,7 @@ import zarr
 import numpy as np
 
 
-@st.cache
+# @st.cache
 def get_data():
     return pd.read_parquet('https://github.com/mcasali/AirQualityDashboard/blob/main/Data/Testing/test.parquet')
 
