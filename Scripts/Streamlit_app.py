@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import geopandas as gpd
 import zarr
 import numpy as np
 
@@ -9,6 +10,10 @@ def get_data():
     return pd.read_parquet('https://github.com/mcasali/AirQualityDashboard/blob/main/Data/Testing/test.parquet',
                            engine="fastparquet")
 
+@st.cache
+def get_states()
+    polygon = gpd.read_file()
+    return
 
 # df = get_data()
 
@@ -28,5 +33,6 @@ SWDOWN ... \n
 T2 max ...\n
 T2 min ... \n
 """)
+
 
 st.map()
