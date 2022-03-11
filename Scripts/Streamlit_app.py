@@ -11,9 +11,9 @@ def get_data():
                            engine="fastparquet")
 
 @st.cache
-def get_states()
-    polygon = gpd.read_file()
-    return
+def get_states():
+    states = gpd.read_file('https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/States/cb_2018_us_state_5m.shp')
+    return states
 
 # df = get_data()
 
@@ -34,5 +34,5 @@ T2 max ...\n
 T2 min ... \n
 """)
 
-
-st.map()
+state_data = get_states()
+st.map(state_data)
