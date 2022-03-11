@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import geopandas as gpd
 import zarr
+import pyproj
 import numpy as np
 
 
@@ -13,6 +14,7 @@ def get_data():
 @st.cache
 def get_states():
     states = gpd.read_file('https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/States/cb_2018_us_state_5m.shp')
+    states.to_crs(pyproj.CRS.from_epsg(4326), inplace=True)
     return states
 
 # df = get_data()
@@ -35,4 +37,5 @@ T2 min ... \n
 """)
 
 state_data = get_states()
-st.map(state_data)
+state_data.plot_bokeh()
+# st.map(state_data)
