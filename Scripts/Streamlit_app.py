@@ -31,21 +31,19 @@ st.set_page_config(layout='wide')
 #     return zarr.load(r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Zarr_Outputs\out_{}.zarr".format(var))
 
 
-# @st.cache
-@st.experimental_memo
+@st.cache
 def get_geojson(geojson_path):
     return gpd.read_file(geojson_path)
 
 
-# @st.cache
-@st.experimental_memo
+@st.cache
 def open_geojsons():
     states = get_geojson(
-        "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_States.geojson")
+        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_States.geojson")
     counties = get_geojson(
-        "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_Counties.geojson")
+        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Counties.geojson")
     cities = get_geojson(
-        "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_Cities.geojson")
+        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Cities.geojson")
     return states, counties, cities
 
 
@@ -88,35 +86,6 @@ with st.expander("Explore the Air Quality Data Dashboard Viewer"):
 st.header("Analyze geographic data")
 
 
-@st.experimental_singleton
-def create_state_map():
-    new_state_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
-    new_state_map.add_gdf(states_gdf, layer_name='States', zoom_to_layer=False)
-    return new_state_map
-
-
-@st.experimental_singleton
-def create_county_map():
-    new_county_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
-    new_county_map.add_gdf(counties_gdf, layer_name='Counties', zoom_to_layer=False)
-    return new_county_map
-
-
-@st.experimental_singleton
-def create_cities_map():
-    new_cities_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
-    new_cities_map.add_gdf(cities_gdf, layer_name='Cities', zoom_to_layer=False)
-    return new_cities_map
-
-
-@st.experimental_singleton
-def create_maps():
-    state_map_init = create_state_map()
-    county_map_init = create_county_map()
-    cities_map_init = create_cities_map()
-    return state_map_init, county_map_init, cities_map_init
-
-
 # Kepler code
 with st.container():
     geojson_option = st.selectbox('Choose data to display:', ('States', 'Counties', 'Cities'))
@@ -124,16 +93,6 @@ with st.container():
     geojson_dict = {"States": states_gdf, "Counties": counties_gdf, "Cities": cities_gdf}
     main_map.add_gdf(geojson_dict[geojson_option], layer_name=geojson_option, zoom_to_layer=False)
     main_map.to_streamlit()
-
-
-    # state_map, county_map, cities_map = create_maps()
-    # if geojson_option == 'States':
-    #     state_map.to_streamlit()
-    # elif geojson_option == 'Counties':
-    #     county_map.to_streamlit()
-    # elif geojson_option == 'Cities':
-    #     cities_map.to_streamlit()
-
 
 
 # Add summary
@@ -207,4 +166,3 @@ with st.container():
             )
         else:
             st.sidebar.write("Please finish selecting data")
-
