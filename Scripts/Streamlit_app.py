@@ -22,7 +22,7 @@ from streamlit_folium import folium_static
 
 
 # Set wide mode
-# st.set_page_config(layout='wide')
+st.set_page_config(layout='wide')
 
 
 # functions
@@ -31,116 +31,108 @@ from streamlit_folium import folium_static
 #     return zarr.load(r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Zarr_Outputs\out_{}.zarr".format(var))
 
 
-@st.cache
+# @st.cache
+@st.experimental_memo
 def get_geojson(geojson_path):
     return gpd.read_file(geojson_path)
 
+
+# @st.cache
+@st.experimental_memo
+def open_geojsons():
+    states = get_geojson(
+        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_States.geojson")
+    counties = get_geojson(
+        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Counties.geojson")
+    cities = get_geojson(
+        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Cities.geojson")
+    return states, counties, cities
+
+
+states_gdf, counties_gdf, cities_gdf = open_geojsons()
 
 # Main page text
 st.title("Air Quality Index User Dashboard")
 
 with st.expander("How to use this dashboard"):
     st.write("""
-    1. Choose a time period from the sidebar\n
-    2. Choose one or many tracers from the sidebar\n
-    3. Choose the type of statistic used for aggregation \n
-    4. Choose one or many geographic locations from the sidebar\n
-    5. A download button will appear. Click to download the results in a CSV file.""")
+    1. Choose a time period from the sidebar. The air quality data are available from 2005-2019. \n
+    2. Select a time aggregation method. \n
+    3. Choose one or many air quality tracers. \n
+    4. Choose the type of statistic used for the data aggregation. \n
+    5. Choose one or many geographic locations. Options include choosing an entire state, multiple counties, or urban areas.  \n
+    6. A download button will appear. Click to download the results in CSV format.
+    7. Additional plots will appear below the download area. These plots show previews of the selected data. """)
 
 with st.expander("What are the tracers?"):
     st.write("""
-    AQI... \n
-    Cloud fraction...\n
-    CO...\n
-    MDA8...\n
-    NO2...\n
-    pm10...\n
-    pm1... \n
-    pm25... \n
-    SO2... \n
-    SWDOWN ... \n
-    T2 max ...\n
-    T2 min ... \n
+    AQI: Maximum measure of air quality index from O3, PM, and other criteria pollutants \n
+    Cloud fraction: Percentage of each pixel that is covered by clouds\n
+    CO: Carbon monoxide concentration \n
+    MDA8: Maxiumum daily 8-hour ozone average \n
+    NO2: Nitrogen dioxide concentration \n
+    PM10:  Particulate matter smaller than 10 µm in aerodynamic diameter \n
+    PM1: Particulate matter smaller than 1 µm in aerodynamic diameter \n
+    PM25: Particulate matter smaller than 25 µm in aerodynamic diameter \n
+    SO2: Sulfur dioxide concentration \n
+    SWDOWN: Downward shortwave radiation \n
+    T2 Max: Maximum surface temperature \n
+    T2 Min: Minimum sufarce temperature \n
     """)
+
+with st.expander("Explore the Air Quality Data Dashboard Viewer"):
+    st.write("Link to [Air Quality Dashboard Viewer](https://ncar.maps.arcgis.com/apps/dashboards/b7b795b14ed4428e953e558e180b6f75)")
 
 
 # Add map
 st.header("Analyze geographic data")
 
-# folium code
-# with st.container():
-#     states_gdf = get_geojson(
-#         r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_States.geojson")
-#     counties_gdf = get_geojson(
-#         r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Counties.geojson")
-#     cities_gdf = get_geojson(
-#         r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Cities.geojson")
-#     geojson_option = st.selectbox('Choose data to display:', ('States', 'Counties', 'Cities'))
-#     main_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
-#     main_map.add_basemap('SATELLITE')
-#     main_map.add_basemap("HYBRID")
-#     main_map.add_basemap('TERRAIN')
-#     if geojson_option == 'States':
-#         main_map.add_gdf(states_gdf, layer_name=geojson_option)
-#     elif geojson_option == 'Cities':
-#         main_map.add_gdf(cities_gdf, layer_name=geojson_option)
-#     elif geojson_option == 'Counties':
-#         main_map.add_gdf(counties_gdf, layer_name=geojson_option)
-#     main_map.to_streamlit(add_layer_control=True)
 
-# folium code v2
-# @st.cache
-# def open_geojsons():
-#     states_geojson_in = r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_States.geojson"
-#     counties_geojson_in = r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Counties.geojson"
-#     cities_geojson_in =r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Cities.geojson"
-#     states = folium.GeoJson(data=(open(states_geojson_in, "r").read()), name='States')
-#     counties = folium.GeoJson(data=(open(counties_geojson_in, "r").read()), name='Counties')
-#     cities = folium.GeoJson(data=(open(cities_geojson_in, "r").read()), name='Cities')
-#     return states, counties, cities
-#
-#
-# states_geojson, counties_geojson, cities_geojson = open_geojsons
+@st.experimental_singleton
+def create_state_map():
+    new_state_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
+    new_state_map.add_gdf(states_gdf, layer_name='States', zoom_to_layer=False)
+    return new_state_map
 
 
-# with st.container():
-#     states_gdf = get_geojson(
-#         r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_States.geojson")
-#     counties_gdf = get_geojson(
-#         r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Counties.geojson")
-#     cities_gdf = get_geojson(
-#         r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Cities.geojson")
-#     geojson_option = st.selectbox('Choose data to display:', ('States', 'Counties', 'Cities'))
-#     folium_map = folium.Map(tiles='Stamen Terrain', location=[38, -96], zoom_start=4, control_scale=True)
-#     folium.TileLayer('OpenStreetMap').add_to(folium_map)
-#
-#     # folium.TileLayer(tiles='https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
-#     #                  attr='Tiles courtesy of the <a href="https://usgs.gov/">U.S. Geological Survey</a>').add_to(folium_map)
-#     # states_geojson = r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_States.geojson"
-#     # counties_geojson = r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Counties.geojson"
-#     # cities_geojson =r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Cities.geojson"
-#
-#     geojson_dict = {"States": states_gdf, "Counties": counties_gdf, "Cities": cities_gdf}
-#     geojson_layer = folium.GeoJson(
-#         data=(geojson_dict[geojson_option]), name=geojson_option).add_to(folium_map)
-#     folium.features.GeoJsonPopup(fields=['NAME'], labels=False).add_to(geojson_layer)
-#     folium.LayerControl().add_to(folium_map)
-#     folium_static(folium_map)
+@st.experimental_singleton
+def create_county_map():
+    new_county_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
+    new_county_map.add_gdf(counties_gdf, layer_name='Counties', zoom_to_layer=False)
+    return new_county_map
+
+
+@st.experimental_singleton
+def create_cities_map():
+    new_cities_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
+    new_cities_map.add_gdf(cities_gdf, layer_name='Cities', zoom_to_layer=False)
+    return new_cities_map
+
+
+@st.experimental_singleton
+def create_maps():
+    state_map_init = create_state_map()
+    county_map_init = create_county_map()
+    cities_map_init = create_cities_map()
+    return state_map_init, county_map_init, cities_map_init
 
 
 # Kepler code
 with st.container():
-    states_gdf = get_geojson(
-        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_States.geojson")
-    counties_gdf = get_geojson(
-        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Counties.geojson")
-    cities_gdf = get_geojson(
-        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Cities.geojson")
     geojson_option = st.selectbox('Choose data to display:', ('States', 'Counties', 'Cities'))
     main_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
     geojson_dict = {"States": states_gdf, "Counties": counties_gdf, "Cities": cities_gdf}
     main_map.add_gdf(geojson_dict[geojson_option], layer_name=geojson_option, zoom_to_layer=False)
     main_map.to_streamlit()
+
+
+    # state_map, county_map, cities_map = create_maps()
+    # if geojson_option == 'States':
+    #     state_map.to_streamlit()
+    # elif geojson_option == 'Counties':
+    #     county_map.to_streamlit()
+    # elif geojson_option == 'Cities':
+    #     cities_map.to_streamlit()
 
 
 
@@ -150,7 +142,6 @@ st.header("Data request summary: \n")
 # Sidebar
 with st.container():
     st.sidebar.title("Selecting data:")
-
 
     # Choosing dates in sidebar
     st.sidebar.header("Select a time period: ")
@@ -163,6 +154,12 @@ with st.container():
     st.write(f'Ending date is: {ending_date}')
 
 
+    # Choosing time aggregation
+    st.sidebar.header("Select a time aggregation: ")
+    time_aggregation = st.sidebar.selectbox("Choose a time aggregation: ", ("Daily", "Weekly", "Monthly", "Yearly"))
+
+    st.write(f"The selected time aggregation is: {time_aggregation}")
+
 
     # Choosing tracers
     st.sidebar.header("Select tracers: ")
@@ -172,12 +169,10 @@ with st.container():
     st.write(f"The tracers you have selected are: {', '.join(tracer_selections)}")
 
 
-
     # Choosing statistics
     st.sidebar.header("Select statistics: ")
     statistics = st.sidebar.multiselect('What statistic would you like calculated?', ('MAX', 'MIN', 'MEAN'))
     st.write(f"The statistics that will be calculated are: {', '.join(statistics)}")
-
 
 
     # Choosing geographic options
@@ -213,4 +208,3 @@ with st.container():
         else:
             st.sidebar.write("Please finish selecting data")
 
-# Process data based on requests
