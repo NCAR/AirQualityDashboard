@@ -29,12 +29,13 @@ st.set_page_config(layout='wide')
 #     return zarr.load(r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Zarr_Outputs\out_{}.zarr".format(var))
 
 
-# @st.cache
+@st.cache
 def get_geojson(geojson_path):
-    return gpd.read_file(geojson_path)
+    with open(geojson_path) as f:
+        return gpd.read_file(f)
 
 
-# @st.cache
+@st.cache
 def open_geojsons():
     states = get_geojson(
         "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_States.geojson")
@@ -45,7 +46,7 @@ def open_geojsons():
     return states, counties, cities
 
 
-# states_gdf, counties_gdf, cities_gdf = open_geojsons()
+states_gdf, counties_gdf, cities_gdf = open_geojsons()
 
 # Main page text
 st.title("Air Quality Index User Dashboard")
@@ -88,8 +89,8 @@ st.header("Analyze geographic data")
 with st.container():
     geojson_option = st.selectbox('Choose data to display:', ('States', 'Counties', 'Cities'))
     main_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
-    # geojson_dict = {"States": states_gdf, "Counties": counties_gdf, "Cities": cities_gdf}
-    # main_map.add_gdf(geojson_dict[geojson_option], layer_name=geojson_option, zoom_to_layer=False)
+    geojson_dict = {"States": states_gdf, "Counties": counties_gdf, "Cities": cities_gdf}
+    main_map.add_gdf(geojson_dict[geojson_option], layer_name=geojson_option, zoom_to_layer=False)
     main_map.to_streamlit()
 
 
