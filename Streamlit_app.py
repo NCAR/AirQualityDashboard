@@ -37,11 +37,11 @@ def get_geojson(geojson_path):
 @st.cache
 def open_geojsons():
     states = get_geojson(
-        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_States.geojson")
+        "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_States.geojson")
     counties = get_geojson(
-        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Counties.geojson")
+        "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_Counties.geojson")
     cities = get_geojson(
-        r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Geojsons\US_Cities.geojson")
+        "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_Cities.geojson")
     return states, counties, cities
 
 
