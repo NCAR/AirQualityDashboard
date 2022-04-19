@@ -29,12 +29,12 @@ st.set_page_config(layout='wide')
 #     return zarr.load(r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Zarr_Outputs\out_{}.zarr".format(var))
 
 
-# @st.cache
+@st.cache
 def get_geojson(geojson_path):
     return gpd.read_file(geojson_path)
 
 
-# @st.cache
+@st.cache
 def open_geojsons():
     states = get_geojson(
         "https://raw.githubusercontent.com/mcasali/AirQualityDashboard/master/Data/GIS/Boundaries/Geojsons/US_States.geojson")
