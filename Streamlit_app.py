@@ -88,7 +88,7 @@ st.header("Analyze geographic data")
 with st.container():
     geojson_option = st.selectbox('Choose data to display:', ('States', 'Counties', 'Cities'))
     main_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
-    geojson_dict = {"States": states_gdf, "Counties": counties_gdf, "Cities": cities_gdf}
+    # geojson_dict = {"States": states_gdf, "Counties": counties_gdf, "Cities": cities_gdf}
     # main_map.add_gdf(geojson_dict[geojson_option], layer_name=geojson_option, zoom_to_layer=False)
     main_map.to_streamlit()
 
