@@ -45,7 +45,7 @@ def open_geojsons():
     return states, counties, cities
 
 
-states_gdf, counties_gdf, cities_gdf = open_geojsons()
+# states_gdf, counties_gdf, cities_gdf = open_geojsons()
 
 # Main page text
 st.title("Air Quality Index User Dashboard")
