@@ -14,11 +14,9 @@ import pyproj
 import zarr
 import numpy as np
 import folium
-import leafmap.foliumap as leafmap
 import leafmap.kepler as leafmap
 from datetime import datetime
 import time
-from streamlit_folium import folium_static
 
 
 # Set wide mode
