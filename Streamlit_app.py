@@ -31,18 +31,17 @@ st.set_page_config(layout='wide')
 
 @st.cache
 def get_geojson(geojson_path):
-    with open(geojson_path) as f:
-        return gpd.read_file(f)
+    return gpd.read_file(geojson_path)
 
 
 @st.cache
 def open_geojsons():
     states = get_geojson(
-        "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_States.geojson")
+        "https://raw.githubusercontent.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_States.geojson")
     counties = get_geojson(
-        "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_Counties.geojson")
+        "https://raw.githubusercontent.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_Counties.geojson")
     cities = get_geojson(
-        "https://github.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_Cities.geojson")
+        "https://raw.githubusercontent.com/mcasali/AirQualityDashboard/blob/main/Data/GIS/Boundaries/Geojsons/US_Cities.geojson")
     return states, counties, cities
 
 
