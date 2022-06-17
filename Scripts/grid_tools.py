@@ -28,7 +28,9 @@ from distutils.version import LooseVersion
 
 # Import Additional Modules
 import netCDF4
-import numpy
+import numpy as np
+import xarray as xr
+
 import osgeo
 from osgeo import gdal
 from osgeo import ogr
@@ -56,25 +58,41 @@ grid_proj4 = '+proj=lcc +lat_0=40 +lon_0=-97 +lat_1=33 +lat_2=45 +x_0=0 +y_0=0 +
 
 # Obtain the path of this file, so other files may be found relative to it
 file_path = os.path.abspath(os.path.dirname(__file__))
-OutDir = os.path.abspath(os.path.dirname(__file__))
+#OutDir = os.path.abspath(os.path.dirname(__file__))
+OutDir = r'C:\Users\ksampson\Desktop\Air_Quality_Scratch'
 
 # A raster may be used to describe the model grid, rather than specifying with globals above
 fromRaster = False
 raster_path = os.path.join(file_path, r'..\Data\GIS\Tiff\pm25_daily.tif')
 
 # Specify polygon file for calculating boundaries
-use_poygons = True
+use_poygons = False
 polygons = os.path.join(file_path, r'..\Data\GIS\Boundaries\Geojsons\US_States.geojson')
 fieldname = 'NAME'
 
 # Use pre-calculated spatial weight file?
-read_weights = False
-regridweightnc = os.path.join(file_path, r'..\Data\weights\US_States_AQgrid.nc')
+read_weights = True
+#regridweightnc = os.path.join(file_path, r'..\Data\weights\US_States_AQgrid.nc')
+regridweightnc = r'C:\Users\ksampson\Desktop\Air_Quality_Scratch\spatialweights.nc'
+
+# Zarr file (input model results)
+in_dataset = os.path.join(file_path, r'..\Data\Zarr\array_XS.zarr')
 
 # Other options
 check_geometry = True                                                           # Check geometry to trap any .Area issues
 threshold = 1e10                                                                # Number of square meters above which a polygon gets split up
 splits = 2                                                                      # Number of chunks to divide the large polygon into
+weight_dtype = 'f8'                                                             # Numpy dtype for the spatial weights
+RasterDriver = 'GTiff'                                                          # Raster output format
+
+# BELOW IS FOR TESTING
+
+zone_name = 'Colorado'
+outSHP = r'C:\Users\ksampson\Desktop\Air_Quality_Scratch\polygon_boundary.shp'
+
+# Output spatial weight raster (for viewing and confirming orientation, etc.)
+OutGTiff =  r'C:\Users\ksampson\Desktop\Air_Quality_Scratch\spatialweights.tif'
+
 # --- End Global Variables --- #
 
 # --- Classes --- #
@@ -227,6 +245,27 @@ class Gridder_Layer(object):
                 geometry = feature = None
                 del x0, x1, y1, y0, id1
         return layer
+
+    def numpy_to_Raster(self, in_arr):
+        '''
+        This funciton takes in an input array. It will copy the input raster dataset
+        information to the output such that they will have identical geotransform,
+        coordinate system, and size. The output raster will have the data type of
+        the input array. Statistics will be computed on the output.
+        '''
+
+        driver = gdal.GetDriverByName('Mem')
+        gdaltype = NumericTypeCodeToGDALTypeCode(in_arr.dtype)
+        print('    GDAL Data type derived from input array: {0} ({1})'.format(gdaltype, in_arr.dtype))
+
+        outDS = driver.Create('', self.ncols, self.nrows, 1, gdaltype)
+        outDS.SetProjection(self.proj.ExportToWkt())
+        outDS.SetGeoTransform(self.GeoTransform())
+        band = outDS.GetRasterBand(1)
+        BandWriteArray(band, in_arr)
+        stats = outDS.GetRasterBand(1).GetStatistics(0,1)                           # Calculate statistics
+        driver = band = stats = None
+        return outDS
 
 # --- End Classes --- #
 
@@ -478,6 +517,167 @@ def perform_intersection(gridder_obj, proj1, layer, fieldname):
     # Clean up and return
     return allweights
 
+def checkfield(layer, fieldname, string1):
+    '''Check for existence of provided fieldnames'''
+    layerDefinition = layer.GetLayerDefn()
+    fieldslist = []
+    for i in range(layerDefinition.GetFieldCount()):
+        fieldslist.append(layerDefinition.GetFieldDefn(i).GetName())
+    if fieldname in fieldslist:
+        i = fieldslist.index(fieldname)
+        field_defn = layerDefinition.GetFieldDefn(i)
+    else:
+        print('    Field {0} not found in input {1}. Terminating...'.format(fieldname, string1))
+        raise SystemExit
+    return field_defn, fieldslist
+
+def getfieldinfo(field_defn, fieldname):
+    '''Get information about field type for buildng the output NetCDF file later'''
+    if field_defn.GetType() == ogr.OFTInteger:
+        fieldtype = 'integer'
+        print("found ID type of Integer")
+    elif field_defn.GetType() == ogr.OFTInteger64:
+        fieldtype = 'integer64'
+        print("found ID type of Integer64")
+    elif field_defn.GetType() == ogr.OFTReal:
+        fieldtype = 'real'
+        print("field type: OFTReal not currently supported in output NetCDF file.")
+        raise SystemExit
+    elif field_defn.GetType() == ogr.OFTString:
+        fieldtype = 'string'
+        print("found ID type of String")
+    else:
+        print("ID Type not found ... Exiting")
+        raise SystemExit
+    print("    Field Type for field '%s': %s (%s)" %(fieldname, field_defn.GetType(), fieldtype))
+    return fieldtype
+
+def write_spatial_weights(regridweightnc, results, fieldtype1):
+    '''Create a long-vector netCDF file. '''
+
+    tic1 = time.time()
+    NC_format = 'NETCDF4'
+
+    # Get the size of the dimensions for constructing the netCDF file
+    print('Beginning to get the size of the dictionaries.')
+    dim1size = 0
+    dim2size = 0
+    counter = 1
+    for allweights in results:
+        dim1size += len(allweights[0])
+        dim2size += sum([len(item) for item in allweights[0].values()])
+        allweights = None
+        counter += 1
+    print('  Finished gathering dictionary length information')
+
+    # variables for compatability with the code below, which was formerly from a function
+    gridflag = 1
+    print('Beginning to build weights netCDF file: %s . Time elapsed: %s' %(regridweightnc, time.time()-tic1))
+
+    # Create netcdf file for this simulation
+    rootgrp = netCDF4.Dataset(regridweightnc, 'w', format=NC_format)
+
+    # Create dimensions and set other attribute information
+    dim1name = 'polyid'
+    dim2name = 'data'
+    dim1 = rootgrp.createDimension(dim1name, dim1size)
+    dim2 = rootgrp.createDimension(dim2name, dim2size)
+    print('    Dimensions created after {0: 8.2f} seconds.'.format(time.time()-tic1))
+
+    # Handle the data type of the polygon identifier
+    if fieldtype1 == 'integer':
+        ids = rootgrp.createVariable(dim1name, 'i4', (dim1name))                # Coordinate Variable (32-bit signed integer)
+        masks = rootgrp.createVariable('IDmask', 'i4', (dim2name))              # (32-bit signed integer)
+    elif fieldtype1 == 'integer64':
+        ids = rootgrp.createVariable(dim1name, 'i8', (dim1name))                # Coordinate Variable (64-bit signed integer)
+        masks = rootgrp.createVariable('IDmask', 'i8', (dim2name))              # (64-bit signed integer)
+    elif fieldtype1 == 'string':
+        ids = rootgrp.createVariable(dim1name, str, (dim1name))                 # Coordinate Variable (string type character)
+        masks = rootgrp.createVariable('IDmask', str, (dim2name))               # (string type character)
+    print('    Coordinate variable created after {0: 8.2f} seconds.'.format(time.time()-tic1))
+
+    # Create fixed-length variables
+    overlaps = rootgrp.createVariable('overlaps', 'i4', (dim1name))             # 32-bit signed integer
+    weights = rootgrp.createVariable('weight', 'f8', (dim2name))                # (64-bit floating point)
+    rweights = rootgrp.createVariable('regridweight', 'f8', (dim2name))         # (64-bit floating point)
+
+    if gridflag == 1:
+        iindex = rootgrp.createVariable('i_index', 'i4', (dim2name))            # (32-bit signed integer)
+        jindex = rootgrp.createVariable('j_index', 'i4', (dim2name))            # (32-bit signed integer)
+        iindex.long_name = 'Index in the x dimension of the raster grid (starting with 1,1 in LL corner)'
+        jindex.long_name = 'Index in the y dimension of the raster grid (starting with 1,1 in LL corner)'
+    print('    Variables created after {0: 8.2f} seconds.'.format(time.time()-tic1))
+
+    # Set variable descriptions
+    masks.long_name = 'Polygon ID (polyid) associated with each record'
+    weights.long_name = 'fraction of polygon(polyid) intersected by polygon identified by poly2'
+    rweights.long_name = 'fraction of intersecting polyid(overlapper) intersected by polygon(polyid)'
+    ids.long_name = 'ID of polygon'
+    overlaps.long_name = 'Number of intersecting polygons'
+    print('    Variable attributes set after {0: 8.2f} seconds.'.format(time.time()-tic1))
+
+    # Fill in global attributes
+    rootgrp.history = 'Created %s' %time.ctime()
+
+    # Iterate over dictionaries and begin filling in NC variable arrays
+    dim1len = 0
+    dim2len = 0
+    counter = 1
+    for allweights in results:
+        tic2 = time.time()
+
+        # Create dictionaries
+        spatialweights = allweights[0].copy()
+        regridweights = allweights[1].copy()
+        other_attributes = allweights[2].copy()
+        allweights = None
+
+        # Set dimensions for this slice
+        dim1start = dim1len
+        dim2start = dim2len
+        dim1len += len(spatialweights)
+        dim2len += sum([len(item) for item in spatialweights.values()])
+
+        # Start filling in elements
+        if fieldtype1 == 'integer':
+            ids[dim1start:dim1len] = np.array([x[0] for x in spatialweights.items()])    # Test to fix ordering of ID values
+        if fieldtype1 == 'integer64':
+            #ids[dim1start:dim1len] = np.array([x[0] for x in spatialweights.items()], dtype=np.long)    # Test to fix ordering of ID values
+            ids[dim1start:dim1len] = np.array([x[0] for x in spatialweights.items()], dtype=np.int64)    # Test to fix ordering of ID values
+        elif fieldtype1 == 'string':
+            ids[dim1start:dim1len] = np.array([x[0] for x in spatialweights.items()], dtype=np.object)    # Test to fix ordering of ID values
+
+        overlaps[dim1start:dim1len] = np.array([len(x) for x in spatialweights.values()])
+
+        masklist = [[x[0] for y in x[1]] for x in spatialweights.items()]       # Get all the keys for each list of weights
+        masks[dim2start:dim2len] = np.array([item for sublist in masklist for item in sublist], dtype=np.object)  # Flatten to 1 list (get rid of lists of lists)
+        del masklist
+
+        weightslist = [[item[1] for item in weight] for weight in spatialweights.values()]
+        weights[dim2start:dim2len] = np.array([item for sublist in weightslist for item in sublist], dtype=np.object)
+        del weightslist
+
+        rweightlist = [[item[1] for item in rweight] for rweight in regridweights.values()]
+        rweights[dim2start:dim2len] = np.array([item for sublist in rweightlist for item in sublist], dtype=np.object)
+        del rweightlist
+
+        if gridflag == 1:
+            iindexlist= [[item[1] for item in attribute] for attribute in other_attributes.values()]
+            iindex[dim2start:dim2len] = np.array([item for sublist in iindexlist for item in sublist], dtype=np.object)
+            del iindexlist
+            jindexlist = [[item[2] for item in attribute] for attribute in other_attributes.values()]
+            jindex[dim2start:dim2len] = np.array([item for sublist in jindexlist for item in sublist], dtype=np.object)
+            del jindexlist
+
+        spatialweights = regridweights = other_attributes = None
+        print('  [{0}] Done setting dictionary in {1} seconds.'.format(counter, time.time()-tic2))
+        counter += 1
+
+    # Close file
+    rootgrp.close()
+    del fieldtype1
+    print('NetCDF correspondence file created in {0: 8.2f} seconds.'.format(time.time()-tic1))
+
 # --- End Functions --- #
 
 # --- Main Codeblock --- #
@@ -494,7 +694,7 @@ if __name__ == '__main__':
     # Code below will build the grid representation using an input raster
     if fromRaster:
         if os.path.exists(raster_path):
-            print('Found path to raster file: {0}'.format(raster_path))
+            print('Found path to template grid raster file: {0}'.format(raster_path))
 
             # Opening the file with GDAL, with read only acces
             gdal.AllRegister()
@@ -502,8 +702,8 @@ if __name__ == '__main__':
 
             ncols = ds.RasterXSize
             nrows = ds.RasterYSize
-            print('        Input Raster Size: {0} x {1} x {2}'.format(ncols, nrows, ds.RasterCount))
-            print('        Projection of input raster: {0}'.format(InRaster.GetProjection()))
+            print('    Input Raster Size: {0} x {1} x {2}'.format(ncols, nrows, ds.RasterCount))
+            print('    Projection of input raster: {0}'.format(InRaster.GetProjection()))
 
             x00, DX, xskew, y00, yskew, DY = ds.GetGeoTransform()
             grid_proj4 = get_projection_from_raster(ds).ExportToProj4()
@@ -518,23 +718,26 @@ if __name__ == '__main__':
         grid_proj = osr.SpatialReference()
         grid_proj.ImportFromProj4(grid_proj4)
 
-    # Some tests of functionality
+    # SOME TESTS OF FUNCTIONALITY
 
     # Build the grid object and test the class functions
     gridObj = Gridder_Layer(DX, DY, x00, y00, nrows, ncols, grid_proj4)
     grid_proj = gridObj.proj
 
     gt = gridObj.GeoTransform()
-    print(gt)
+    #print(gt)
 
     grid_extent = gridObj.grid_extent()
-    print(grid_extent)
+    #print(grid_extent)
 
     grid_envelope = gridObj.grid_envelope()
-    print(grid_envelope)
+    #print(grid_envelope)
 
-    boundary_shape = gridObj.boundarySHP('', 'MEMORY')
-    print(boundary_shape.Area())
+    outDriverName = 'ESRI Shapefile'                                            # ['ESRI Shapefile', 'MEMORY']
+    #boundary_shape = gridObj.boundarySHP('', 'MEMORY')
+    boundary_shape = gridObj.boundarySHP(outSHP, outDriverName)
+    #print(boundary_shape.Area())
+    boundary_shape = None
 
     # Open the boundary polygon dataset to calculate spatial weights dynamically
     if use_poygons:
@@ -543,7 +746,10 @@ if __name__ == '__main__':
         ds_in = driver.Open(polygons, 0)
         inLayer = ds_in.GetLayer()                                              # Get the 'layer' object from the data source
 
-        inLayer.SetAttributeFilter("{0} = '{1}'".format(fieldname, 'Colorado')) # Select the ID from the layer
+        # Check for existence of provided fieldnames
+        field_defn, fieldslist = checkfield(inLayer, fieldname, polygons)
+
+        inLayer.SetAttributeFilter("{0} = '{1}'".format(fieldname, zone_name)) # Select the ID from the layer
         print('  After setting attribute filter: {0} features.'.format(inLayer.GetFeatureCount()))
         polygeom = ogr.Geometry(ogr.wkbMultiPolygon)
 
@@ -552,28 +758,83 @@ if __name__ == '__main__':
 
         # Perform intersection between selected polygons and the grid
         allweights = perform_intersection(gridder_obj, grid_proj, inLayer, fieldname)
+        spatialweights = allweights[0]
+        regridweights = allweights[1]
+        other_attributes = allweights[2]
+
+        # Create array of the i and j indices
+        iindexlist= [[item[1] for item in attribute] for attribute in other_attributes.values()]
+        i_index_arr = np.array([item for sublist in iindexlist for item in sublist], dtype=np.object)
+        jindexlist = [[item[2] for item in attribute] for attribute in other_attributes.values()]
+        j_index_arr = np.array([item for sublist in jindexlist for item in sublist], dtype=np.object)
+        del jindexlist, iindexlist, other_attributes, regridweights
+
+        # Optionally write output spatial weight file (store for later)
+        fieldtype1 = getfieldinfo(field_defn, fieldname)
+        write_spatial_weights(regridweightnc, [allweights], fieldtype1)
+        del allweights
 
         # Clean up
         driver = inLayer = ds_in = polygeom = gridder_obj = None
 
     # Open spatial weight file to read pre-calculated spatial weights
-    elif read_weights:
-        if os.path.exists(in_nc):
+    elif read_weights and os.path.exists(regridweightnc):
+        spatialweight = True
+        regridweight = False
 
-            # Find if the spatial weights sum to 1
-            rootgrp = netCDF4.Dataset(regridweightnc, 'r', format='NETCDF4_CLASSIC')
-            variables = rootgrp.variables
+        # Find if the spatial weights sum to 1
+        rootgrp = netCDF4.Dataset(regridweightnc, 'r', format='NETCDF4_CLASSIC')
+        variables = rootgrp.variables
 
-            # Get the variables
-            IDmask_arr = variables['IDmask'][:]
-            i_index_arr = variables['i_index'][:]
-            j_index_arr = variables['j_index'][:]
+        # Get the variables
+        IDmask_arr = variables['IDmask'][:]
+        i_index_arr = variables['i_index'][:]
+        j_index_arr = variables['j_index'][:]
 
-            # Read weights and IDs into arrays
-            if spatialweight:
-                weights_arr = variables['weight'][:]
-            elif regridweight:
-                weights_arr = variables['regridweight'][:]
+        # Read weights and IDs into arrays
+        if spatialweight:
+            weights_arr = variables['weight'][:]
+        elif regridweight:
+            weights_arr = variables['regridweight'][:]
+
+    # Create a grid of spatial weights
+    weightgrid = True
+    if weightgrid:
+        print('  Raster will have nrows: {0} and ncols: {1}'.format(nrows, ncols))
+
+        # Setup output driver
+        driver = gdal.GetDriverByName('Memory')
+        gdaltype = NumericTypeCodeToGDALTypeCode(numpy.dtype(weight_dtype))
+
+        # Copy the empty raster
+        weight_grid = np.zeros((ncols, nrows), dtype=weight_dtype)
+
+        # Mask the array to just this basin ID
+        basin_mask = IDmask_arr==zone_name
+
+        for weight,i,j in zip(weights_arr[basin_mask], i_index_arr-1, j_index_arr-1):
+            weight_grid[i,j] = weight
+
+        # Output the grid of weights to a raster format (for confirming orientatin, etc.).
+        weightRaster = True
+        if weightRaster:
+            # Flip the y axis because NWM grid and indices are oriented south-north
+            weight_grid = numpy.flip(weight_grid, axis=1)
+
+            # Transpose so that order is y,x
+            weight_grid = weight_grid.transpose()
+
+            # Save to raster dataset
+            OutRaster = gridObj.numpy_to_Raster(weight_grid)
+
+            if OutRaster is not None:
+                target_ds = gdal.GetDriverByName(RasterDriver).CreateCopy(OutGTiff, OutRaster)
+                target_ds = None
+            OutRaster = None
+
+    # Open the full dataset, dropping variables as necessary
+    #drop_vars = [variable for variable in xr.open_zarr(file_input) if variable not in Variables]
+    #ds_input = xr.open_zarr(in_dataset) # , drop_variables=drop_vars)   # chunks='auto'
 
     print('Process completed in %3.2f seconds' %(time.time()-tic))
 
