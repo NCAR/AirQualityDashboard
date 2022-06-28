@@ -63,7 +63,7 @@ outDriverName = 'ESRI Shapefile'
 
 # Specify directory where polygon boundary files are stored
 poly_dir = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\Boundaries\Geojsons'))
-poly_ext = r'.geojson'
+poly_ext = r'.json'
 
 # Specify the fieldname to use in the polygon files. Must be unique to each feature
 fieldname = 'NAME'
@@ -685,7 +685,7 @@ def main():
 
     # Iterate over vector files on disk
     vector_src_list = glob.glob(os.path.join(poly_dir, '*{0}'.format(poly_ext)))
-    print('Found {0} vector sources.'.format(len(vector_src_list)))
+    print('Found {0} vector sources in path {1}'.format(len(vector_src_list), poly_dir))
 
     for vector_src in vector_src_list:
         print('Creating spatial weights for vector source:\n\t{0}'.format(vector_src))
