@@ -63,10 +63,11 @@ outDriverName = 'ESRI Shapefile'
 
 # Specify directory where polygon boundary files are stored
 poly_dir = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\Boundaries\Geojsons'))
-poly_ext = r'.json'
+poly_ext = r'.geojson'
+vector_src_list = glob.glob(os.path.join(poly_dir, '*{0}'.format(poly_ext)))
 
 # Specify the fieldname to use in the polygon files. Must be unique to each feature
-fieldname = 'NAME'
+#fieldname = 'NAME'
 
 # Specify directory to store spatial weight files
 weight_dir = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\spatial_weights'))
@@ -78,6 +79,13 @@ splits = 2                                                                     #
 weight_dtype = 'f8'                                                             # Numpy dtype for the spatial weights
 RasterDriver = 'GTiff'                                                          # Raster output format
 
+# Specify polygon file for dynamically calculating spatial weights from polygon boundaries
+vector_src_dict = {os.path.basename(key):key for key in vector_src_list}
+
+# Map vector datasets to the appropriate fieldname for the unique ID of each feature
+vector_fieldmap = {'US_Cities.geojson':'GEOID10',
+                    'US_Counties.geojson':'GEOID',
+                    'US_States.geojson':'GEOID'}
 # --- End Global Variables --- #
 
 # --- Classes --- #
@@ -102,9 +110,9 @@ class Gridder_Layer(object):
         proj.ImportFromProj4(proj4)
 
         # Added 11/19/2020 to allow for GDAL 3.0 changes to the order of coordinates in transform
-        if int(osgeo.__version__[0]) >= 3:
-            # GDAL 3 changes axis order: https://github.com/OSGeo/gdal/issues/1546
-            proj.SetAxisMappingStrategy(osgeo.osr.OAMS_TRADITIONAL_GIS_ORDER)
+        #if int(osgeo.__version__[0]) >= 3:
+        #    # GDAL 3 changes axis order: https://github.com/OSGeo/gdal/issues/1546
+        #    proj.SetAxisMappingStrategy(osgeo.osr.OAMS_TRADITIONAL_GIS_ORDER)
         self.proj = proj
 
     def GeoTransform(self):
@@ -314,9 +322,9 @@ def perform_intersection(gridder_obj, proj1, layer, fieldname):
     proj2 = layer.GetSpatialRef()
 
     # Allow for GDAL 3.0 changes to the order of coordinates in transform
-    if int(osgeo.__version__[0]) >= 3:
-        # GDAL 3 changes axis order: https://github.com/OSGeo/gdal/issues/1546
-        proj2.SetAxisMappingStrategy(osgeo.osr.OAMS_TRADITIONAL_GIS_ORDER)
+    #if int(osgeo.__version__[0]) >= 3:
+    #    # GDAL 3 changes axis order: https://github.com/OSGeo/gdal/issues/1546
+    #    proj2.SetAxisMappingStrategy(osgeo.osr.OAMS_TRADITIONAL_GIS_ORDER)
     coordTrans = osr.CoordinateTransformation(proj2, proj1)
 
     # Attempt using a grid layer returned by the gridder object
@@ -610,7 +618,7 @@ def write_spatial_weights(regridweightnc, results, fieldtype1):
     del fieldtype1
     print('NetCDF correspondence file created in {0: 3.2f} seconds.'.format(time.time()-tic1))
 
-def intersection_compute(fieldname = fieldname,
+def intersection_compute(fieldname = '',
                         gridder_obj = None,
                         inLayer = None):
 
@@ -621,7 +629,7 @@ def intersection_compute(fieldname = fieldname,
     allweights = perform_intersection(gridder_obj, gridder_obj.proj, inLayer, fieldname)
     return allweights
 
-def weight_grid(gridObj=None, OutGTiff=None, weights_arr=None, i_index_arr=None, j_index_arr=None, IDmask_arr=None, zone_name=''):
+def weight_grid(gridObj=None, OutGTiff=None, weights_arr=None, i_index_arr=None, j_index_arr=None, IDmask_arr=None, zone_name='', weightRaster=True):
     '''
     Given a weight array, create a grid of weight values. This is primarily used
     to test that weights are in the correct grid location and orientation for a
@@ -639,11 +647,11 @@ def weight_grid(gridObj=None, OutGTiff=None, weights_arr=None, i_index_arr=None,
     # Mask the array to just this basin ID
     basin_mask = IDmask_arr==zone_name
 
-    for weight,i,j in zip(weights_arr[basin_mask], i_index_arr-1, j_index_arr-1):
+    #for weight,i,j in zip(weights_arr[basin_mask], i_index_arr-1, j_index_arr-1):
+    for weight,i,j in zip(weights_arr[basin_mask], i_index_arr[basin_mask]-1, j_index_arr[basin_mask]-1):
         weight_grid[i,j] = weight
 
     # Output the grid of weights to a raster format (for confirming orientatin, etc.).
-    weightRaster = True
     if weightRaster:
         # Flip the y axis because NWM grid and indices are oriented south-north
         weight_grid = numpy.flip(weight_grid, axis=1)
@@ -658,7 +666,8 @@ def weight_grid(gridObj=None, OutGTiff=None, weights_arr=None, i_index_arr=None,
             target_ds = gdal.GetDriverByName(RasterDriver).CreateCopy(OutGTiff, OutRaster)
             target_ds = None
         OutRaster = None
-    return
+        print('Saved output weight raster to {0}'.format(OutGTiff))
+    return weight_grid
 
 def main():
 
@@ -684,7 +693,7 @@ def main():
         boundary_shape = None
 
     # Iterate over vector files on disk
-    vector_src_list = glob.glob(os.path.join(poly_dir, '*{0}'.format(poly_ext)))
+    #vector_src_list = glob.glob(os.path.join(poly_dir, '*{0}'.format(poly_ext)))
     print('Found {0} vector sources in path {1}'.format(len(vector_src_list), poly_dir))
 
     for vector_src in vector_src_list:
@@ -703,18 +712,11 @@ def main():
         inLayer = ds_in.GetLayer()                                              # Get the 'layer' object from the data source
 
         # Check for existence of provided fieldnames
+        fieldname = vector_fieldmap.get(os.path.basename(vector_src), None)
         field_defn, fieldslist = checkfield(inLayer, fieldname, vector_src)
-
-        polygon_selected = False            # Use a selected polygon
-        if polygon_selected:
-            inLayer.SetAttributeFilter("{0} in ({1})".format(fieldname, ','.join(zone_names))) # Select the ID from the layer
-            print('  Number of features after setting attribute filter: {0}'.format(inLayer.GetFeatureCount()))
 
         # Perform intersection between selected polygons and the grid
         allweights = perform_intersection(gridder_obj, gridder_obj.proj, inLayer, fieldname)
-        ##        allweights = intersection_compute(fieldname = fieldname,
-        ##                                            gridder_obj = gridder_obj,
-        ##                                            inLayer = inLayer)
 
         # Optionally write output spatial weight file (store for later)
         fieldtype = getfieldinfo(field_defn, fieldname)

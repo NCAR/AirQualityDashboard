@@ -16,6 +16,10 @@
 2022/03/30
     This script is designed to store data and functions in support of the Air
     Quality dashboard.
+
+    NOTE:
+        For spatial weight files, grid indices are west-to-east (i) and
+        south-to-north (j), starting in the lower left corner.
 '''
 
 # --- Import Modules --- #
@@ -25,11 +29,13 @@ import time
 import os
 import sys
 from distutils.version import LooseVersion
+from functools import reduce
 
 # Import Additional Modules
 import netCDF4
 import numpy as np
 import xarray as xr
+import pandas as pd
 
 import osgeo
 from osgeo import gdal
@@ -44,102 +50,101 @@ gdal.UseExceptions()                                                            
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 
 # Import grid information from the grid_info.py script
+import spatial_weights
 import grid_info
 gridName, DX, DY, nrows, ncols, x00, y00, grid_proj4 = grid_info.grid_params()
-from spatial_weights import (Gridder_Layer,
-                                poly_ext,
-                                checkfield,
-                                intersection_compute,
-                                getfieldinfo,
-                                write_spatial_weights,
-                                weight_grid)
+
+# Obtain the path of this file, so other files may be found relative to it
+file_path = os.path.abspath(os.path.dirname(__file__))
 
 # --- End Import Modules --- #
 
 # --- Global Variables --- #
 
-# Obtain the path of this file, so other files may be found relative to it
-file_path = os.path.abspath(os.path.dirname(__file__))
+# BELOW IS FOR TESTING
+
+# User selection items
+
+# The zone dataset and feature name to test
+vector_src_name = 'US_States.geojson'
+
+# Zones should be passed as the ID and a label
+#zone_names = {'08':'Colorado'} # '06':'California', '08':'Colorado'}
+zone_names = {'06':'California'}
+
+# Variable subset
+Variables = ['AQI_daily', 'CO_daily_avg']
+
+# Time selection
+start_time = '2006-01-01'
+end_time = '2018-01-01'
+
+# Time aggregation. Any pandas resample time period may be used.
+# ['1A', '1M', '1W', '1D', 'W-SUN']
+# https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#dateoffset-objects
+# Period start: ['AS', 'MS', 'WS', 'DS']
+resample_time_period = 'W-SUN'
+
+# Statistical representation chosen: ['MEAN', 'MAX', 'MIN']
+stats = ['MEAN', 'MAX', 'MIN']
+
+# ABOVE IS FOR TESTING
 
 # Output directory
-#OutDir = file_path
+#OutDir = os.path.abspath(os.path.join(file_path, r'..\scratch'))
 OutDir = r'C:\Users\ksampson\Desktop\Air_Quality_Scratch'
 
-# A raster may be used to describe the model grid, rather than specifying with globals above
-fromRaster = False
-raster_path = os.path.join(file_path, r'..\Data\GIS\Tiff\pm25_daily.tif')
-
-# Specify polygon file for calculating boundaries
-use_poygons = True
-vector_src = os.path.join(file_path, r'..\Data\GIS\Boundaries\Geojsons\US_States.geojson')
-#vector_src = os.path.join(file_path, r'..\Data\GIS\Boundaries\Geojsons\US_Counties.geojson')
-#vector_src = os.path.join(file_path, r'..\Data\GIS\Boundaries\Geojsons\US_Cities.geojson')
-fieldname = 'NAME'
-
-# Use pre-calculated spatial weight file?
-read_weights = True
-regridweightnc = r'C:\Users\ksampson\Documents\GitHub\AirQualityDashboard\Data\GIS\spatial_weights\{grid}_{filename}_spatialweights.nc'
-
-# Other options
-weight_dtype = 'f8'                                                             # Numpy dtype for the spatial weights
-RasterDriver = 'GTiff'                                                          # Raster output format
+# --- DO NOT EDIT BELOW THIS LINE --- #
 
 # Zarr file (input model results)
-#in_dataset = os.path.join(file_path, r'..\Data\Zarr\array_XS.zarr')
+#in_dataset = r'C:\Data\Projects\Air_Quality\data\AQ_Tracer_Data_SM_time_0_1.nc'
+in_dataset = r'C:\Data\Projects\Air_Quality\data\AQ_Tracer_Data_SM.zarr'
+
+# Variables to keep from input Zarr store (CF-compliance, etc)
+keepVars = [ 'crs', 'crs_t']
 
 # Attributes specific to underlying data store
 xVar = 'x'
 yVar = 'y'
 latVar = 'latitude'
 lonVar = 'longitude'
-timeVar = 'time'
+timeVar = 'Time'
 
-# BELOW IS FOR TESTING
-#in_dataset = r'C:\Data\Projects\Air_Quality\data\AQ_Tracer_Data_SM_time_0_1.nc'
-in_dataset = r'C:\Data\Projects\Air_Quality\data\AQ_Tracer_Data_SM.zarr'
+# A raster may be used to describe the model grid, rather than specifying with globals above
+fromRaster = False
+raster_path = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\Tiff\pm25_daily.tif'))
 
-zone_names = ['Colorado']
+# Output or input spatial weight file template
+regridweightnc = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\spatial_weights\{grid}_{filename}_spatialweights.nc'))
 
-# Output spatial weight raster (for viewing and confirming orientation, etc.)
-OutGTiff_template =  r'C:\Users\ksampson\Desktop\Air_Quality_Scratch\spatialweights_{zone_name}.tif'
+# Use pre-calculated spatial weight file if possible?
+# NOTE: To generate weights for all features, you can set read_weights=False, use_polygons=False, build_weights=True, and polygon_selected=False
+read_weights = True             # If spatial weightfile exists, use it
+use_poygons = True              # If spatial weightfile does not exist, dynamically generate weights
+build_weights = False           # If dynamically computing weights, should we save them? This will only save features found in zone_names
 
 # Use a grid-to-basin weighting function (spatialweight) or basin-to-grid (regridweight)
 spatialweight = True
 regridweight = False
+weight_dtype = 'f8'                                                             # Numpy dtype for the spatial weights
+RasterDriver = 'GTiff'                                                          # Raster output format
+
+# Create a grid of spatial weights to test that the orientation of the weightfile is correct?
+save_weight_grid = False
+
+# Output spatial weight raster (for viewing and confirming orientation, etc.)
+OutGTiff_template = os.path.join(OutDir, 'spatialweights_{zone_name}.tif')
 
 # --- End Global Variables --- #
 
 # --- Functions --- #
 
-def read_Zarr():
-    '''
-    '''
-    tic1 = time.time()
-
-
-def subset_DS_spatial(ds, top, bottom, left, right):
-    '''
-    '''
-    tic1 = time.time()
-
-    top = 40
-    bottom = 37
-    left = 258
-    right = 265.4
-
-
-    ds_sel = ds.isel(lon=(ds.lon >= left) & (ds.lon <= right),
-                              lat=(ds.lat >= bottom) & (ds.lat <= top),
-                              )
-    ds_sel_avg = ds_sel.mean(dim=['lat','lon'])
-
-def main(in_file = in_dataset,
-            start_date = None,
-            end_date = None,
-            time_agg = '1D',
-            variables = [],
-            statistics = [],
-            geog_extent = []):
+def main(in_dataset = in_dataset,
+            start_time = start_time,
+            end_time = end_time,
+            resample_time_period = resample_time_period,
+            Variables = Variables,
+            stats = stats,):
     '''
     Main function to handle inputs from user interface and call functionality
     from this script.
@@ -149,32 +154,310 @@ def main(in_file = in_dataset,
     Outputs:
         -
     '''
+    global regridweightnc
 
-    # Open input dataset
-    #ds = xr.open_dataset(in_file)
-    ds = xr.open_zarr(in_file)
+    # Save spatially aggregated time-series to CSV?
+    save_out_df = False
 
-    # --- Subset by variables --- #
+    # Allow time aggregation?
+    time_agg = True
 
-    # Drop all other variables except time and the requested variable
-    keep_vars = [timeVar, 'crs', 'crs_t', 'x', 'y', 'latitude', 'longitude',]
-    drop_vars = [var_in for var_in in ds.variables if var_in not in varNames+keep_vars]
-    print('Dropping {0} from input file.'.format(drop_vars))
-    ds = ds.drop(drop_vars)
+    # Build the grid object and test the class functions
+    gridder_obj = spatial_weights.Gridder_Layer(DX, DY, x00, y00, nrows, ncols, grid_proj4)
 
-    # Subset in space
-    # This might be handled by the spatial weighting grid
+    # Specify the expected name of the regridding weight file
+    vector_src = spatial_weights.vector_src_dict.get(vector_src_name, None)
+    regridweightnc = regridweightnc.format(grid = gridName, filename = os.path.basename(vector_src).replace(spatial_weights.poly_ext, ''))
 
-    # Subset in time
-    start_time = ds['Time'][0]
-    end_time = ds['Time'][-1]
-    ds = ds.sel(Time=slice(start_time, end_time))
+    # Open spatial weight file to read pre-calculated spatial weights
+    if read_weights and os.path.exists(regridweightnc):
+        IDmask_arr, weights_arr, i_index_arr, j_index_arr = read_weight_file(regridweightnc)
 
-    # Aggregate over time if requested
-    time_agg = "1D"
-    ds = ds[variables].resample({timeVar:time_agg}).mean(dim=timeVar) # , closed='right')
+    # Open the boundary polygon dataset to calculate spatial weights dynamically
+    elif use_poygons:
+        IDmask_arr, weights_arr, i_index_arr, j_index_arr = generate_weights(vector_src,
+                                                                                zone_names,
+                                                                                gridder_obj,
+                                                                                polygon_selected=True,
+                                                                                build_weights=build_weights)
 
-    return ds
+    else:
+        print('No way to create spatial aggregation. Existing...')
+        raise SystemExit
+
+    # Open the full dataset, dropping variables as necessary
+    drop_vars = [variable for variable in xr.open_zarr(in_dataset) if variable not in Variables+keepVars]
+    ds_input = xr.open_zarr(in_dataset, drop_variables=drop_vars)
+
+    # Isolate the data variables from the coordinate names
+    data_vars = [varName for varName in ds_input.variables if varName not in ds_input.coords]
+
+    # Subset by time
+    ds_input = ds_input.sel({timeVar:slice(start_time, end_time)})
+
+    # Subset in space using individual zones and perform spatial aggregation
+    zone_ds_dict = {}
+    for zone_name in zone_names:
+
+        if save_weight_grid:
+            OutGTiff = OutGTiff_template.format(zone_name=zone_name)
+            weightRaster = True
+        else:
+            OutGTiff = None
+            weightRaster = False
+
+        # Get a 2D array of spatial weights for this zone
+        weight_grid = spatial_weights.weight_grid(gridObj=gridder_obj,
+                    OutGTiff=OutGTiff,
+                    weights_arr=weights_arr,
+                    i_index_arr=i_index_arr,
+                    j_index_arr=j_index_arr,
+                    IDmask_arr=IDmask_arr,
+                    zone_name=zone_name,
+                    weightRaster=weightRaster)
+
+        # Important to transpose the weight grid so that the x,y order matches the Xarray DataSet dimension order.
+        weight_grid = weight_grid.T
+
+        # Create a DataArray object to store the weight grid
+        weight_da = xr.DataArray(data=weight_grid, dims=[yVar, xVar])
+
+        # Subset in space based on presence of non-zero weights
+        ds_sub = ds_input.where(weight_da>0, drop=True)
+        weight_da = weight_da.where(weight_da>0, drop=True)
+
+        # Output to netCDF to make sure spatial component is correct
+        #ds_sub.isel({timeVar:slice(0,2,None)}).to_netcdf(os.path.join(OutDir, '{0}.nc'.format(zone_name)))
+
+        # Once we collapse the spatial dimensions, the projection varibles are no longer needed
+        ds_sub = ds_sub.drop(keepVars)
+
+        # Apply spatial groupby operation by multiplying the weights by the data
+        ds_sub = (ds_sub*weight_da).sum(dim=[yVar,xVar])            # Sum the weighted values
+        del weight_grid, weight_da
+
+        zone_ds_dict[zone_name] = ds_sub
+        del ds_sub
+
+    # Perform temporal aggregation and save to output file
+    zone_df_dict = {}
+    for zone_name, ds_output in zone_ds_dict.items():
+        zone_label = zone_names[zone_name]
+
+        # Loading the DataSet into memory now saves a little time later
+        tic1 = time.time()
+        ds_output.load()
+        print('Loaded dataset in {0:3.2f} seconds.'.format(time.time()-tic1))
+
+        # xarray.to_dataframe is very hungry and may be where all computaiton happens if everything is dask delayed before this
+        tic1 = time.time()
+        out_df = ds_output.to_dataframe()
+        if save_out_df:
+            out_df.to_csv(os.path.join(OutDir, 'AQ_{0}.csv'.format(zone_label)))
+        print('To dataframe in {0:3.2f} seconds.'.format(time.time()-tic1))
+
+        # Aggregate over time (resample). Doing this in pandas is much faster than in xarray.
+        tic1 = time.time()
+        if time_agg:
+            out_df_list = []
+            for i,stat_function in enumerate(stats):
+                print('\tCalculating statistic: {0}.'.format(stat_function))
+                if stat_function == 'MEAN':
+                    out_df2 = out_df.resample(resample_time_period).mean()
+                if stat_function == 'MAX':
+                    out_df2 = out_df.resample(resample_time_period).max()
+                if stat_function == 'MIN':
+                    out_df2 = out_df.resample(resample_time_period).min()
+
+                # Rename the column to append the statistical function and time aggregations
+                out_df2 = out_df2.rename(columns={varName:'{0}_{1}_{2}'.format(varName, resample_time_period, stat_function) for varName in out_df2.columns})
+                out_df_list.append(out_df2)
+                del out_df2
+            out_df3 = reduce(lambda x, y: pd.merge(x, y, on=timeVar), out_df_list)
+            del out_df_list
+
+        out_file = os.path.join(OutDir, 'AQ_{0}_{1}.csv'.format(resample_time_period, zone_label))
+        out_df3.to_csv(out_file, float_format='%g')
+        zone_df_dict[zone_name] = out_df3
+        del ds_output, out_df
+        print('Final dataframe created in {0:3.2f} seconds.'.format(time.time()-tic1))
+
+    # Clean up
+    ds_input.close()
+    del ds_input, zone_ds_dict
+    return zone_df_dict
+
+def plot_data(zone_names=[], zone_df_dict={}, save_plot=False):
+    '''
+    Plot the data generated by this script
+    '''
+    tic1 = time.time()
+    import matplotlib.pyplot as plt
+
+    # Get the appropriate number of colors for this number of districts
+    blackandwhite = False # If only one time-series is present, use black and white
+    if len(zone_names) == 1 and blackandwhite:
+        colors = ['black']
+    else:
+        #colors = plt.cm.rainbow(np.linspace(0, 1, len(zone_names)))
+        colors = plt.cm.Set1(np.linspace(0, 1, len(zone_names)))
+
+    # Get list of variables to plot
+    columns = [list(out_df.columns) for out_df in zone_df_dict.values()]
+    columns = [item for sublist in columns for item in sublist]       # Flatten list
+    var_roots = list(set(['_'.join(item.split('_')[0:-2]) for item in columns]))
+
+    # Setup plot
+    plt.close("all")
+    fig = plt.figure()      # figsize=(20,10))
+    fig.set_size_inches(20, 10*len(var_roots))
+
+    # Iterate first over each data variable
+    for n,var_root in enumerate(var_roots):
+        print('Plotting variable: {0}'.format(var_root))
+
+        # Plot options for this variable set
+        ax = fig.add_subplot(len(var_roots),1,n+1)
+
+        # Iterate over requested regions
+        i = 0
+        for zone_name, out_df in zone_df_dict.items():
+            zone_label = zone_names[zone_name]
+
+            # Find the columns to plot
+            plot_cols = [column for column in out_df.columns if var_root in column]
+
+            # Option to shade area between min and max value
+            shaded = True
+            if 'MAX' in stats and 'MIN' in stats and shaded:
+                max_col = [item for item in plot_cols if item.endswith('MAX')][0]
+                min_col = [item for item in plot_cols if item.endswith('MIN')][0]
+                ax.fill_between(out_df.index,
+                                out_df[max_col],
+                                out_df[min_col],
+                                color=colors[i],
+                                alpha=0.3,
+                                linewidth=0.0)
+                plot_cols = [item for item in plot_cols if item not in [max_col, min_col]]
+
+            for plot_col in plot_cols:
+
+                if 'MEAN' in plot_col:
+                    ax.plot(out_df[plot_col],
+                            color=colors[i],
+                            label=zone_label) # label='_nolegend_',
+                else:
+                    ax.plot(out_df[plot_col],
+                            color='grey',
+                            linestyle='dashed',
+                            label='_nolegend_')
+            i+=1
+
+        ax.set_ylabel(var_root)
+        ax.set_xlabel('Time')
+        plt.margins(x=0)
+        ax.legend(fontsize=14)
+    #plt.tight_layout()
+
+    if save_plot:
+        tic2 = time.time()
+        out_plot = os.path.join(OutDir, 'plot.png')
+        plt.savefig(out_plot)
+        print('Saved plot in {0}'.format(out_plot))
+
+    print('Created plot in {0:3.2f} seconds.'.format(time.time()-tic1))
+    return plt
+
+def read_weight_file(regridweightnc):
+    '''
+    Read existing spatial weight file for spatial weights
+    '''
+
+    tic1 = time.time()
+    print('Found sptaial weight file: {0}'.format(regridweightnc))
+
+    # Find if the spatial weights sum to 1
+    rootgrp = netCDF4.Dataset(regridweightnc, 'r', format='NETCDF4_CLASSIC')
+    variables = rootgrp.variables
+
+    # Get the variables
+    IDmask_arr = variables['IDmask'][:]
+    i_index_arr = variables['i_index'][:]
+    j_index_arr = variables['j_index'][:]
+
+    # Read weights and IDs into arrays
+    if spatialweight:
+        weights_arr = variables['weight'][:]
+    elif regridweight:
+        weights_arr = variables['regridweight'][:]
+
+    rootgrp.close()
+    del rootgrp ,variables
+    print('Read spatial weight file in {0: 3.2f} seconds.'.format(time.time()-tic1))
+    return IDmask_arr, weights_arr, i_index_arr, j_index_arr
+
+def generate_weights(vector_src, zone_names, gridder_obj, polygon_selected=False, build_weights=False):
+    '''
+    '''
+
+    tic1 = time.time()
+    print('Dynamically creating spatial weights.')
+
+    driver = ogr.Open(vector_src).GetDriver()
+    ds_in = driver.Open(vector_src, 0)
+    inLayer = ds_in.GetLayer()                                              # Get the 'layer' object from the data source
+
+    # Check for existence of provided fieldnames
+    fieldname = spatial_weights.vector_fieldmap.get(os.path.basename(vector_src), None)
+    field_defn, fieldslist = spatial_weights.checkfield(inLayer, fieldname, vector_src)
+
+    # Calculate the user-selected polygon's spatial weights (True) or calculate all weights (False)
+    if polygon_selected:
+        SQL = " or ".join(["{0} = '{1}'".format(fieldname, zone_name) for zone_name in zone_names])
+        inLayer.SetAttributeFilter(SQL) # Select the ID from the layer
+        print('  After setting attribute filter: {0} features.'.format(inLayer.GetFeatureCount()))
+
+    # Perform intersection between selected polygons and the grid
+    allweights = spatial_weights.intersection_compute(fieldname = fieldname,
+                                        gridder_obj = gridder_obj,
+                                        inLayer = inLayer)
+    spatialweights = allweights[0]
+    regridweights = allweights[1]
+    other_attributes = allweights[2]
+
+    # Read weights and IDs into arrays
+    if spatialweight:
+        weightslist = [[item[1] for item in weight] for weight in spatialweights.values()]
+        weights_arr = numpy.array([item for sublist in weightslist for item in sublist], dtype=numpy.object)
+        del weightslist
+    elif regridweight:
+        rweightlist = [[item[1] for item in rweight] for rweight in regridweights.values()]
+        weights_arr = numpy.array([item for sublist in rweightlist for item in sublist], dtype=numpy.object)
+        del rweightlist
+
+    # Create the array of ID masks for the weight array
+    masklist = [[x[0] for y in x[1]] for x in spatialweights.items()]       # Get all the keys for each list of weights
+    IDmask_arr = numpy.array([item for sublist in masklist for item in sublist], dtype=numpy.object)
+    del masklist
+
+    # Create array of the i and j indices
+    iindexlist= [[item[1] for item in attribute] for attribute in other_attributes.values()]
+    i_index_arr = np.array([item for sublist in iindexlist for item in sublist], dtype=np.object)
+    jindexlist = [[item[2] for item in attribute] for attribute in other_attributes.values()]
+    j_index_arr = np.array([item for sublist in jindexlist for item in sublist], dtype=np.object)
+    del jindexlist, iindexlist, other_attributes, regridweights
+
+    # Optionally write output spatial weight file (store for later)
+    if build_weights:
+        print('  Building spatial weight file: {0}'.format(regridweightnc))
+        fieldtype1 = spatial_weights.getfieldinfo(field_defn, fieldname)
+        spatial_weights.write_spatial_weights(regridweightnc, [allweights], fieldtype1)
+    del allweights
+
+    # Clean up
+    driver = inLayer = ds_in = None
+    print('Generated spatial weights in {0: 3.2f} seconds.'.format(time.time()-tic1))
+    return IDmask_arr, weights_arr, i_index_arr, j_index_arr
 
 # --- End Functions --- #
 
@@ -189,107 +472,24 @@ if __name__ == '__main__':
     tic = time.time()
     print('Process initiated at %s' %time.ctime())
 
-    # SOME TESTS OF FUNCTIONALITY
+    # Process data
+    zone_df_dict = main(
+            in_dataset = in_dataset,
+            start_time = start_time,
+            end_time = end_time,
+            resample_time_period = resample_time_period,
+            Variables = Variables,
+            stats = stats)
 
-    # Build the grid object and test the class functions
-    gridder_obj = Gridder_Layer(DX, DY, x00, y00, nrows, ncols, grid_proj4)
-
-    # Specify the expected name of the regridding weight file
-    #regridweightnc = os.path.join(weight_dir, '{0}_{1}_spatialweights.nc'.format(gridName, os.path.basename(vector_src).replace(poly_ext, '')))
-    regridweightnc = regridweightnc.format(grid = gridName, filename = os.path.basename(vector_src).replace(poly_ext, ''))
-
-    # Open spatial weight file to read pre-calculated spatial weights
-    if read_weights and os.path.exists(regridweightnc):
-        print('Found sptaial weight file: {0}'.format(regridweightnc))
-
-        # Find if the spatial weights sum to 1
-        rootgrp = netCDF4.Dataset(regridweightnc, 'r', format='NETCDF4_CLASSIC')
-        variables = rootgrp.variables
-
-        # Get the variables
-        IDmask_arr = variables['IDmask'][:]
-        i_index_arr = variables['i_index'][:]
-        j_index_arr = variables['j_index'][:]
-
-        # Read weights and IDs into arrays
-        if spatialweight:
-            weights_arr = variables['weight'][:]
-        elif regridweight:
-            weights_arr = variables['regridweight'][:]
-
-    # Open the boundary polygon dataset to calculate spatial weights dynamically
-    elif use_poygons:
-        print('Dynamically creating spatial weights.')
-
-        driver = ogr.Open(vector_src).GetDriver()
-        ds_in = driver.Open(vector_src, 0)
-        inLayer = ds_in.GetLayer()                                              # Get the 'layer' object from the data source
-
-        # Check for existence of provided fieldnames
-        field_defn, fieldslist = checkfield(inLayer, fieldname, vector_src)
-
-        polygon_selected = False            # Use a selected polygon
-        if polygon_selected:
-            #inLayer.SetAttributeFilter("{0} = '{1}'".format(fieldname, zone_name)) # Select the ID from the layer
-            inLayer.SetAttributeFilter("{0} in ({1})".format(fieldname, ','.join(zone_names))) # Select the ID from the layer
-            print('  After setting attribute filter: {0} features.'.format(inLayer.GetFeatureCount()))
-
-        # Perform intersection between selected polygons and the grid
-        allweights = intersection_compute(fieldname = fieldname,
-                                            gridder_obj = gridder_obj,
-                                            inLayer = inLayer)
-        spatialweights = allweights[0]
-        regridweights = allweights[1]
-        other_attributes = allweights[2]
-
-        # Read weights and IDs into arrays
-        if spatialweight:
-            weightslist = [[item[1] for item in weight] for weight in spatialweights.values()]
-            weights_arr = numpy.array([item for sublist in weightslist for item in sublist], dtype=numpy.object)
-            del weightslist
-        elif regridweight:
-            rweightlist = [[item[1] for item in rweight] for rweight in regridweights.values()]
-            weights_arr = numpy.array([item for sublist in rweightlist for item in sublist], dtype=numpy.object)
-            del rweightlist
-
-        # Create the array of ID masks for the weight array
-        masklist = [[x[0] for y in x[1]] for x in spatialweights.items()]       # Get all the keys for each list of weights
-        IDmask_arr = numpy.array([item for sublist in masklist for item in sublist], dtype=numpy.object)
-        del masklist
-
-        # Create array of the i and j indices
-        iindexlist= [[item[1] for item in attribute] for attribute in other_attributes.values()]
-        i_index_arr = np.array([item for sublist in iindexlist for item in sublist], dtype=np.object)
-        jindexlist = [[item[2] for item in attribute] for attribute in other_attributes.values()]
-        j_index_arr = np.array([item for sublist in jindexlist for item in sublist], dtype=np.object)
-        del jindexlist, iindexlist, other_attributes, regridweights
-
-        # Optionally write output spatial weight file (store for later)
-        print('  Building spatial weight file: {0}'.format(regridweightnc))
-        fieldtype1 = getfieldinfo(field_defn, fieldname)
-        write_spatial_weights(regridweightnc, [allweights], fieldtype1)
-        del allweights
-
-        # Clean up
-        driver = inLayer = ds_in = None
-
-    # Create a grid of spatial weights
-    weightgrid = True
-    if weightgrid:
-        for zone_name in zone_names:
-            OutGTiff = OutGTiff_template.format(zone_name=zone_name)
-            weight_grid(gridObj=gridder_obj,
-                        OutGTiff=OutGTiff,
-                        weights_arr=weights_arr,
-                        i_index_arr=i_index_arr,
-                        j_index_arr=j_index_arr,
-                        IDmask_arr=IDmask_arr,
-                        zone_name=zone_name)
-
-    # Open the full dataset, dropping variables as necessary
-    #drop_vars = [variable for variable in xr.open_zarr(file_input) if variable not in Variables]
-    #ds_input = xr.open_zarr(in_dataset) # , drop_variables=drop_vars)   # chunks='auto'
-
+    # Create Plot
+    save_plot = True
+    show_plot = False
+    if save_plot or show_plot:
+        plt = plot_data(zone_names=zone_names,
+                        zone_df_dict=zone_df_dict,
+                        save_plot=save_plot)
+        if show_plot:
+            plt.show()
     print('Process completed in %3.2f seconds' %(time.time()-tic))
 
 # --- End Main Codeblock --- #
