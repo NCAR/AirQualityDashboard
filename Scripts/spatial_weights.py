@@ -25,9 +25,11 @@
 # --- Import Modules --- #
 
 # Import Python Core Modules
+import sys
 import os
 import glob
 import time
+from pathlib import Path
 
 # Import Additional Modules
 import numpy as np
@@ -39,6 +41,9 @@ from osgeo import ogr
 from osgeo.gdal_array import *                # Assists in using BandWriteArray, BandReadAsArray, and CopyDatasetInfo
 
 # Import local functions and classes
+path_root = Path(__file__).parents[0]
+app_root = Path(__file__).parents[1]
+sys.path.append(str(path_root))
 import grid_info
 
 # Import grid information from the grid_info.py script
@@ -48,29 +53,19 @@ gridName, DX, DY, nrows, ncols, x00, y00, grid_proj4 = grid_info.grid_params()
 
 # --- Global Variables --- #
 
-# Obtain the path of this file, so other files may be found relative to it
-file_path = os.path.abspath(os.path.dirname(__file__))
-
-# Specify the output directory
-out_dir = os.path.abspath(os.path.join(file_path, r'..\scratch'))
-
-# Write output boundary shapefile to disk?
-write_boundary = True
-grid_boundary = os.path.join(out_dir, r'{0}_grid_boundary.shp'.format(gridName))
-
-# Output vector driver name for boundary file ['ESRI Shapefile', 'MEMORY']
-outDriverName = 'ESRI Shapefile'
+# Specify the output directory and create it if necessary
+out_dir = app_root / 'scratch'
+if not os.path.exists(out_dir):
+    os.mkdir(out_dir)
 
 # Specify directory where polygon boundary files are stored
-poly_dir = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\Boundaries\Geojsons'))
+poly_dir = app_root / 'Data' / 'GIS' / 'Boundaries' / 'Geojsons'
 poly_ext = r'.geojson'
-vector_src_list = glob.glob(os.path.join(poly_dir, '*{0}'.format(poly_ext)))
-
-# Specify the fieldname to use in the polygon files. Must be unique to each feature
-#fieldname = 'NAME'
 
 # Specify directory to store spatial weight files
-weight_dir = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\spatial_weights'))
+weight_dir = app_root / 'Data' / 'GIS' / 'spatial_weights'
+
+# --- DO NOT EDIT BELOW THIS LINE --- #
 
 # Run configurations
 check_geometry = True                                                           # Check geometry to trap any .Area issues
@@ -80,12 +75,20 @@ weight_dtype = 'f8'                                                             
 RasterDriver = 'GTiff'                                                          # Raster output format
 
 # Specify polygon file for dynamically calculating spatial weights from polygon boundaries
+vector_src_list = glob.glob(os.path.join(poly_dir, '*{0}'.format(poly_ext)))
 vector_src_dict = {os.path.basename(key):key for key in vector_src_list}
 
 # Map vector datasets to the appropriate fieldname for the unique ID of each feature
 vector_fieldmap = {'US_Cities.geojson':'GEOID10',
                     'US_Counties.geojson':'GEOID',
                     'US_States.geojson':'GEOID'}
+
+# Output vector driver name for boundary file ['ESRI Shapefile', 'MEMORY']
+outDriverName = 'ESRI Shapefile'
+
+# Write output boundary shapefile to disk?
+grid_boundary = os.path.abspath(out_dir / '{0}_grid_boundary.shp'.format(gridName))
+
 # --- End Global Variables --- #
 
 # --- Classes --- #
@@ -669,7 +672,7 @@ def weight_grid(gridObj=None, OutGTiff=None, weights_arr=None, i_index_arr=None,
         print('Saved output weight raster to {0}'.format(OutGTiff))
     return weight_grid
 
-def main():
+def main(write_boundary = True):
 
     tic1 = time.time()
     print('Process initiated at %s' %time.ctime())

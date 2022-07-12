@@ -38,7 +38,7 @@ file_path = os.path.abspath(os.path.dirname(__file__))
 
 # A raster may be used to describe the model grid, rather than specifying with globals above
 fromRaster = False
-raster_path = os.path.join(file_path, r'..\Data\GIS\Tiff\pm25_daily.tif')
+raster_path = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\Tiff\pm25_daily.tif'))
 
 # Air Quality grid information
 gridName = 'AQ'

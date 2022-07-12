@@ -30,6 +30,8 @@ import os
 import sys
 from distutils.version import LooseVersion
 from functools import reduce
+import zipfile
+from pathlib import Path
 
 # Import Additional Modules
 import netCDF4
@@ -50,58 +52,33 @@ gdal.UseExceptions()                                                            
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 
 # Import grid information from the grid_info.py script
+path_root = Path(__file__).parents[0]
+app_root = Path(__file__).parents[1]
+sys.path.append(str(path_root))
 import spatial_weights
 import grid_info
 gridName, DX, DY, nrows, ncols, x00, y00, grid_proj4 = grid_info.grid_params()
-
-# Obtain the path of this file, so other files may be found relative to it
-file_path = os.path.abspath(os.path.dirname(__file__))
 
 # --- End Import Modules --- #
 
 # --- Global Variables --- #
 
-# BELOW IS FOR TESTING
-
-# User selection items
-
-# The zone dataset and feature name to test
-vector_src_name = 'US_States.geojson'
-
-# Zones should be passed as the ID and a label
-#zone_names = {'08':'Colorado'} # '06':'California', '08':'Colorado'}
-zone_names = {'06':'California'}
-
-# Variable subset
-Variables = ['AQI_daily', 'CO_daily_avg']
-
-# Time selection
-start_time = '2006-01-01'
-end_time = '2018-01-01'
-
-# Time aggregation. Any pandas resample time period may be used.
-# ['1A', '1M', '1W', '1D', 'W-SUN']
-# https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#dateoffset-objects
-# Period start: ['AS', 'MS', 'WS', 'DS']
-resample_time_period = 'W-SUN'
-
-# Statistical representation chosen: ['MEAN', 'MAX', 'MIN']
-stats = ['MEAN', 'MAX', 'MIN']
-
-# ABOVE IS FOR TESTING
-
-# Output directory
-#OutDir = os.path.abspath(os.path.join(file_path, r'..\scratch'))
-OutDir = r'C:\Users\ksampson\Desktop\Air_Quality_Scratch'
-
 # --- DO NOT EDIT BELOW THIS LINE --- #
+
+# Specify the output directory and create it if necessary
+out_dir = app_root / 'scratch'
+if not os.path.exists(out_dir):
+    os.mkdir(out_dir)
+
+# Set path to the output directory. Must already exist and contain the in_dataset
+data_dir = app_root / 'Data' / 'Model_Data'
 
 # Zarr file (input model results)
 #in_dataset = r'C:\Data\Projects\Air_Quality\data\AQ_Tracer_Data_SM_time_0_1.nc'
-in_dataset = r'C:\Data\Projects\Air_Quality\data\AQ_Tracer_Data_SM.zarr'
+in_dataset = data_dir / 'AQ_Tracer_Data_SM.zarr'
 
 # Variables to keep from input Zarr store (CF-compliance, etc)
-keepVars = [ 'crs', 'crs_t']
+keepVars = ['crs', 'crs_t']
 
 # Attributes specific to underlying data store
 xVar = 'x'
@@ -110,12 +87,8 @@ latVar = 'latitude'
 lonVar = 'longitude'
 timeVar = 'Time'
 
-# A raster may be used to describe the model grid, rather than specifying with globals above
-fromRaster = False
-raster_path = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\Tiff\pm25_daily.tif'))
-
 # Output or input spatial weight file template
-regridweightnc = os.path.abspath(os.path.join(file_path, r'..\Data\GIS\spatial_weights\{grid}_{filename}_spatialweights.nc'))
+regridweightnc = os.path.abspath(spatial_weights.weight_dir / '{grid}_{filename}_spatialweights.nc')
 
 # Use pre-calculated spatial weight file if possible?
 # NOTE: To generate weights for all features, you can set read_weights=False, use_polygons=False, build_weights=True, and polygon_selected=False
@@ -133,18 +106,29 @@ RasterDriver = 'GTiff'                                                          
 save_weight_grid = False
 
 # Output spatial weight raster (for viewing and confirming orientation, etc.)
-OutGTiff_template = os.path.join(OutDir, 'spatialweights_{zone_name}.tif')
+OutGTiff_template = os.path.abspath(out_dir / 'spatialweights_{zone_name}.tif')
+
+# Dictionary to translate time aggregation selection to a useable pandas time aggregation function
+time_agg_dict = {"Daily":'1D',
+                    "Weekly":'W-SUN',
+                    "Monthly":'MS',
+                    "Yearly":'AS,'}
+
+# Save output files to Zip, if more than one output CSV is created. Only works in __main__
+zipped_output = True
 
 # --- End Global Variables --- #
 
 # --- Functions --- #
 
 def main(in_dataset = in_dataset,
-            start_time = start_time,
-            end_time = end_time,
-            resample_time_period = resample_time_period,
-            Variables = Variables,
-            stats = stats,):
+            start_time = '2005-01-01',
+            end_time = '2018-12-31',
+            resample_time_period = '1M',
+            Variables = [],
+            stats = ['MEAN'],
+            vector_src_name='US_States.geojson',
+            zone_names = {}):
     '''
     Main function to handle inputs from user interface and call functionality
     from this script.
@@ -227,7 +211,7 @@ def main(in_dataset = in_dataset,
         weight_da = weight_da.where(weight_da>0, drop=True)
 
         # Output to netCDF to make sure spatial component is correct
-        #ds_sub.isel({timeVar:slice(0,2,None)}).to_netcdf(os.path.join(OutDir, '{0}.nc'.format(zone_name)))
+        #ds_sub.isel({timeVar:slice(0,2,None)}).to_netcdf(os.path.join(out_dir, '{0}.nc'.format(zone_name)))
 
         # Once we collapse the spatial dimensions, the projection varibles are no longer needed
         ds_sub = ds_sub.drop(keepVars)
@@ -241,6 +225,7 @@ def main(in_dataset = in_dataset,
 
     # Perform temporal aggregation and save to output file
     zone_df_dict = {}
+    out_files = []
     for zone_name, ds_output in zone_ds_dict.items():
         zone_label = zone_names[zone_name]
 
@@ -253,7 +238,7 @@ def main(in_dataset = in_dataset,
         tic1 = time.time()
         out_df = ds_output.to_dataframe()
         if save_out_df:
-            out_df.to_csv(os.path.join(OutDir, 'AQ_{0}.csv'.format(zone_label)))
+            out_df.to_csv(os.path.join(out_dir, 'AQ_{0}.csv'.format(zone_label)))
         print('To dataframe in {0:3.2f} seconds.'.format(time.time()-tic1))
 
         # Aggregate over time (resample). Doing this in pandas is much faster than in xarray.
@@ -276,8 +261,9 @@ def main(in_dataset = in_dataset,
             out_df3 = reduce(lambda x, y: pd.merge(x, y, on=timeVar), out_df_list)
             del out_df_list
 
-        out_file = os.path.join(OutDir, 'AQ_{0}_{1}.csv'.format(resample_time_period, zone_label))
+        out_file = os.path.join(out_dir, 'AQ_{0}_{1}.csv'.format(resample_time_period, zone_label))
         out_df3.to_csv(out_file, float_format='%g')
+        out_files += [out_file]
         zone_df_dict[zone_name] = out_df3
         del ds_output, out_df
         print('Final dataframe created in {0:3.2f} seconds.'.format(time.time()-tic1))
@@ -285,9 +271,9 @@ def main(in_dataset = in_dataset,
     # Clean up
     ds_input.close()
     del ds_input, zone_ds_dict
-    return zone_df_dict
+    return zone_df_dict, out_files
 
-def plot_data(zone_names=[], zone_df_dict={}, save_plot=False):
+def plot_data(zone_names=[], zone_df_dict={}, save_plot=False, stats=[]):
     '''
     Plot the data generated by this script
     '''
@@ -361,7 +347,7 @@ def plot_data(zone_names=[], zone_df_dict={}, save_plot=False):
 
     if save_plot:
         tic2 = time.time()
-        out_plot = os.path.join(OutDir, 'plot.png')
+        out_plot = os.path.join(out_dir, 'plot.png')
         plt.savefig(out_plot)
         print('Saved plot in {0}'.format(out_plot))
 
@@ -472,24 +458,69 @@ if __name__ == '__main__':
     tic = time.time()
     print('Process initiated at %s' %time.ctime())
 
+    # BELOW IS FOR TESTING
+
+    in_dataset = r'C:\Data\Projects\Air_Quality\data\AQ_Tracer_Data_SM.zarr'
+
+    # User selection items
+
+    # The zone dataset and feature name to test
+    vector_src_name = 'US_States.geojson'
+
+    # Zones should be passed as the ID and a label
+    zone_names = {'06':'California', '08':'Colorado'}
+    #zone_names = {'06':'California'}
+
+    # Variable subset
+    tracer_selections = ['AQI_daily', 'CO_daily_avg']
+
+    # Time selection
+    starting_date = '2006-01-01'
+    ending_date = '2018-01-01'
+
+    # Time aggregation. Any pandas resample time period may be used.
+    # ['1A', '1M', '1W', '1D', 'W-SUN']
+    # https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#dateoffset-objects
+    # Period start: ['AS', 'MS', 'WS', 'DS', 'W-SUN']
+    #resample_time_period = 'MS'
+    time_aggregation = 'Monthly'
+
+    # Statistical representation chosen: ['MEAN', 'MAX', 'MIN']
+    statistics = ['MEAN', 'MAX', 'MIN']
+
+    # Output directory
+    #out_dir = r'C:\Users\ksampson\Desktop\Air_Quality_Scratch'
+
+    # ABOVE IS FOR TESTING
+
     # Process data
-    zone_df_dict = main(
+    zone_df_dict, out_files = main(
             in_dataset = in_dataset,
-            start_time = start_time,
-            end_time = end_time,
-            resample_time_period = resample_time_period,
-            Variables = Variables,
-            stats = stats)
+            start_time = starting_date,
+            end_time = ending_date,
+            resample_time_period = time_agg_dict[time_aggregation],
+            Variables = tracer_selections,
+            stats = statistics)
+
+
+    # TEST TO SAVE MULTIPLE CSVs TO ZIP
+    if zipped_output:
+        zipped_file = os.path.join(out_dir, 'AQ_{0}.zip'.format(time.strftime('%Y-%m-%d_%H%M%S')))
+        with zipfile.ZipFile(zipped_file, 'w') as f:
+            for file in out_files:
+                f.write(file, os.path.basename(file))
+
 
     # Create Plot
     save_plot = True
-    show_plot = False
+    show_plot = True
     if save_plot or show_plot:
         plt = plot_data(zone_names=zone_names,
                         zone_df_dict=zone_df_dict,
-                        save_plot=save_plot)
+                        save_plot=save_plot,
+                        stats=statistics)
         if show_plot:
             plt.show()
-    print('Process completed in %3.2f seconds' %(time.time()-tic))
+    print('Process completed in {0:3.2f} seconds'.format(time.time()-tic))
 
 # --- End Main Codeblock --- #

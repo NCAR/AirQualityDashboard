@@ -3,3 +3,8 @@ geopandas
 leafmap
 zarr
 keplergl
+numpy
+netcdf4
+pandas
+gdal
+xarray

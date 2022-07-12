@@ -6,7 +6,9 @@ Combine all zarr data?
 
 """
 
-
+import sys
+import os
+from pathlib import Path
 import streamlit as st
 import pandas as pd
 import geopandas as gpd
@@ -17,33 +19,68 @@ import folium
 import leafmap.kepler as leafmap
 from datetime import datetime
 import time
+import zipfile
 
+# Import grid information from the grid_info.py script
+sys.path.insert(1, r'..\Scripts')
+from Scripts import grid_info
+from Scripts import spatial_weights
+from Scripts import grid_tools
+from grid_tools import (main, plot_data, in_dataset, time_agg_dict)
 
 # Set wide mode
 st.set_page_config(layout='wide')
 
+# --- Global Variables --- #
+
+# Find the path to this directory
+app_root = Path(__file__).parents[0]
+out_dir = app_root / 'scratch'
+
+# Name the data variables as they will appear in the UI and map to the variable name in the Zarr file
+data_vars_dict = {'Air Quality Index (AQI)': 'AQI_daily',
+                'Cloud fraction': 'Cloud_fraction_daily_avg',
+                'CO mixing ratio': 'CO_daily_avg',
+                'MDA8 ozone mixing ratio': 'MDA8_O3_daily',
+                'PM10 mass concentrations': 'pm10_daily_avg',
+                'PM1 mass concentrations': 'pm1_daily_avg',
+                'PM2.5 mass concentrations': 'pm25_daily_avg',
+                'SO2 mixing ratio': 'SO2_daily_avg',
+                'Shortwave Down': 'SWDOWN_daily_total',
+                'Air Temperature (2m) Daily Max': 'T2_max_daily',
+                'Air Temperature (2m) Daily Min': 'T2_min_daily',
+                'NO2 mixing ratios': 'NO2_daily_avg',}
+
+data_vars_desc = '''
+AQI_daily                : Daily Air Quality Index (AQI) based on O3, PM2.5, and PM10
+CO_daily_avg             : Daily average CO mixing ratios
+Cloud_fraction_daily_avg : Daily average Cloud fraction
+MDA8_O3_daily            : Daily MDA8 ozone mixing ratios
+NO2_daily_avg            : Daily average NO2 mixing ratios
+SO2_daily_avg            : Daily average SO2 mixing ratios
+SWDOWN_daily_total       : Daily total downward reaching solar radiation at the surface
+T2_max_daily             : Daily maximum 2 m Temperature
+T2_min_daily             : Daily minimum 2 m Temperature
+pm10_daily_avg           : Daily average PM10 mass concentrations
+pm1_daily_avg            : Daily average PM1 mass concentrations
+pm25_daily_avg           : Daily average PM2.5 mass concentrations
+'''
 
 # functions
-# @st.cache
-# def get_data(var):
-#     return zarr.load(r"C:\Users\casali\Documents\Projects\ForJenn\AirQualityDashboard\Data\Zarr_Outputs\out_{}.zarr".format(var))
-
 
 @st.cache
 def get_geojson(geojson_path):
     return gpd.read_file(geojson_path)
 
 
+# Alternatively, you could pull geometry from GitHub, but this is slower:
+#    states = get_geojson("https://raw.githubusercontent.com/mcasali/AirQualityDashboard/master/Data/GIS/Boundaries/Geojsons/US_States.geojson")
 @st.cache
 def open_geojsons():
-    states = get_geojson(
-        "https://raw.githubusercontent.com/mcasali/AirQualityDashboard/master/Data/GIS/Boundaries/Geojsons/US_States.geojson")
-    counties = get_geojson(
-        "https://raw.githubusercontent.com/mcasali/AirQualityDashboard/master/Data/GIS/Boundaries/Geojsons/US_Counties.geojson")
-    cities = get_geojson(
-        "https://raw.githubusercontent.com/mcasali/AirQualityDashboard/master/Data/GIS/Boundaries/Geojsons/US_Cities.geojson")
+    states = get_geojson(str(spatial_weights.poly_dir / 'US_States.geojson'))
+    counties = get_geojson(str(spatial_weights.poly_dir / 'US_Counties.geojson'))
+    cities = get_geojson(str(spatial_weights.poly_dir / 'US_Cities.geojson'))
     return states, counties, cities
-
 
 states_gdf, counties_gdf, cities_gdf = open_geojsons()
 
@@ -120,32 +157,40 @@ with st.container():
 
     # Choosing tracers
     st.sidebar.header("Select tracers: ")
-    tracer_selections = st.sidebar.multiselect('Choose one or many tracers:', ['AQI', 'Cloud fraction', 'CO', 'MDA8',
-                                                                               'pm10', 'pm1', 'pm25', 'SO2', 'SWDOWN',
-                                                                               'T2 max', 'T2 min'])
+    tracer_selections = st.sidebar.multiselect('Choose one or many tracers:', list(data_vars_dict.keys()))
     st.write(f"The tracers you have selected are: {', '.join(tracer_selections)}")
 
 
     # Choosing statistics
     st.sidebar.header("Select statistics: ")
-    statistics = st.sidebar.multiselect('What statistic would you like calculated?', ('MAX', 'MIN', 'MEAN'))
+    statistics = st.sidebar.multiselect('What statistic would you like calculated?', ('MEAN', 'MAX', 'MIN'))
     st.write(f"The statistics that will be calculated are: {', '.join(statistics)}")
 
 
     # Choosing geographic options
     st.sidebar.header("Select a geographic extent: ")
+    geo_type = st.sidebar.radio("States/Counties or Cities:", ('States', 'States/Counties', 'Cities'))
 
-    geo_type = st.sidebar.radio("States/Countiers or Cities:", ('States/Counties', 'Cities'))
-
-    if geo_type == "States/Counties":
+    if geo_type == "States":
+        state_list = states_gdf.NAME.to_list()
+        state_choice = st.sidebar.multiselect('Choose a state:', sorted(state_list))
+        vector_src_name = 'US_States.geojson'
+        fieldname = spatial_weights.vector_fieldmap[vector_src_name]
+        zone_choice = {row[fieldname]:row['NAME'] for n,row in states_gdf.loc[states_gdf['NAME'].isin(state_choice)].iterrows()}
+    elif geo_type == "States/Counties":
         state_list = states_gdf.NAME.to_list()
         state_choice = st.sidebar.selectbox('Choose a state:', sorted(state_list))
         counties_choice = st.sidebar.multiselect('Choose county/counties:',
                                                  sorted(counties_gdf.NAME.loc[counties_gdf.STATE == state_choice]))
+        vector_src_name = 'US_Counties.geojson'
+        fieldname = spatial_weights.vector_fieldmap[vector_src_name]
+        zone_choice = {row[fieldname]:row['NAME'] for n,row in counties_gdf.loc[counties_gdf['NAME'].isin(counties_choice)].iterrows()}
     elif geo_type == "Cities":
         cities_choice = st.sidebar.multiselect('Choose city/cities:', sorted(cities_gdf.NAME))
-
-    # st.write(f"The geographic areas are : {', '.join(county_choice)} in {state_choice}")
+        vector_src_name = 'US_Cities.geojson'
+        fieldname = spatial_weights.vector_fieldmap[vector_src_name]
+        zone_choice = {row[fieldname]:row['NAME'] for n,row in cities_gdf.loc[cities_gdf['NAME'].isin(cities_choice)].iterrows()}
+    st.write("\t{0}: {1}".format(geo_type, list(zone_choice.values())))
 
 
 # Add button to query data
@@ -153,14 +198,81 @@ with st.container():
     if st.sidebar.button("Run query"):
         if starting_date and ending_date and tracer_selections and statistics:
             with st.spinner('Exporting data...'):
-                time.sleep(2)
+
+                # Process data
+                tic = time.time()
+                st.write('Process initiated at %s' %time.ctime())
+                zone_df_dict, out_files = main(
+                        in_dataset = in_dataset,
+                        start_time = starting_date,
+                        end_time = ending_date,
+                        resample_time_period = time_agg_dict[time_aggregation],
+                        Variables = [data_vars_dict[tracer] for tracer in tracer_selections],
+                        stats = statistics,
+                        vector_src_name=vector_src_name,
+                        zone_names = zone_choice)
+                st.write('Process completed in %3.2f seconds' %(time.time()-tic))
+
+                # Zip up files if more than one CSV is output
+                if len(out_files) > 1:
+                    zipped_file = out_dir / 'AQ_{0}.zip'.format(time.strftime('%Y-%m-%d_%H%M%S'))
+                    with zipfile.ZipFile(zipped_file, 'w') as f:
+                        for file in out_files:
+                            f.write(file, os.path.basename(file))
+
+                    with open(str(zipped_file), "rb") as fp:
+                        btn = st.download_button(
+                            label="Download data as CSVs in ZIP format",
+                            data=fp,
+                            file_name=zipped_file.name,
+                            mime="application/zip"
+                        )
+
+                else:
+                    out_file = out_files[0]
+                    with open(out_file, "r") as fp:
+                        btn = st.download_button(
+                            label="Download data as CSV",
+                            data=fp,
+                            file_name=os.path.basename(out_file),
+                            mime="text/plain",
+                            )
+
             st.success('Done!')
 
-            st.download_button(
-                label="Download data as CSV",
-                data='',
-                file_name='AirQuality.csv',
-                mime='text/csv',
-            )
+        else:
+            st.sidebar.write("Please finish selecting data")
+
+# Add a plot to the existing data
+with st.container():
+    if st.sidebar.button("Plot Data"):
+        if starting_date and ending_date and tracer_selections and statistics:
+            with st.spinner('Processing data...'):
+
+                # Process data
+                tic = time.time()
+                st.write('Process initiated at %s' %time.ctime())
+                zone_df_dict, out_files = main(
+                        in_dataset = in_dataset,
+                        start_time = starting_date,
+                        end_time = ending_date,
+                        resample_time_period = time_agg_dict[time_aggregation],
+                        Variables = [data_vars_dict[tracer] for tracer in tracer_selections],
+                        stats = statistics,
+                        vector_src_name=vector_src_name,
+                        zone_names = zone_choice)
+                st.write('Process completed in %3.2f seconds' %(time.time()-tic))
+
+                # Create Plot
+                tic = time.time()
+                import matplotlib.pyplot as plt
+                plt = plot_data(zone_names=zone_choice,
+                                zone_df_dict=zone_df_dict,
+                                save_plot=False,
+                                stats=statistics)
+                st.pyplot(plt)
+                st.write('Plot generated in %3.2f seconds' %(time.time()-tic))
+            st.success('Done!')
+
         else:
             st.sidebar.write("Please finish selecting data")
