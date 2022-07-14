@@ -84,6 +84,21 @@ def open_geojsons():
 
 states_gdf, counties_gdf, cities_gdf = open_geojsons()
 
+# Function to analyze the time series data
+@st.cache
+def analyze_data(in_dataset, starting_date, ending_date, time_aggregation, Variables, statistics, vector_src_name, zone_choice):
+    # Process data
+    zone_df_dict, out_files = main(
+            in_dataset = in_dataset,
+            start_time = starting_date,
+            end_time = ending_date,
+            resample_time_period = time_aggregation,
+            Variables = Variables,
+            stats = statistics,
+            vector_src_name = vector_src_name,
+            zone_names = zone_choice)
+    return zone_df_dict, out_files
+
 # Main page text
 st.title("Air Quality Index User Dashboard")
 
@@ -192,26 +207,139 @@ with st.container():
         zone_choice = {row[fieldname]:row['NAME'] for n,row in cities_gdf.loc[cities_gdf['NAME'].isin(cities_choice)].iterrows()}
     st.write("\t{0}: {1}".format(geo_type, list(zone_choice.values())))
 
+##with st.form(key="Selecting data"):
+##    st.sidebar.title("Selecting data:")
+##
+##    # Choosing dates in sidebar
+##    st.sidebar.header("Select a time period: ")
+##    starting_date = st.sidebar.date_input("Starting date:", min_value=datetime(2005, 1, 1),
+##                                          max_value=datetime(2018, 12, 31), value=datetime(2005, 1, 1))
+##    st.write(f'Starting date is: {starting_date}')
+##
+##    ending_date = st.sidebar.date_input("Ending date:", min_value=datetime(2005, 1, 1),
+##                                        max_value=datetime(2018, 12, 31), value=datetime(2018, 12, 31))
+##    st.write(f'Ending date is: {ending_date}')
+##
+##
+##    # Choosing time aggregation
+##    st.sidebar.header("Select a time aggregation: ")
+##    time_aggregation = st.sidebar.selectbox("Choose a time aggregation: ", ("Daily", "Weekly", "Monthly", "Yearly"))
+##
+##    st.write(f"The selected time aggregation is: {time_aggregation}")
+##
+##
+##    # Choosing tracers
+##    st.sidebar.header("Select tracers: ")
+##    tracer_selections = st.sidebar.multiselect('Choose one or many tracers:', list(data_vars_dict.keys()))
+##    st.write(f"The tracers you have selected are: {', '.join(tracer_selections)}")
+##
+##
+##    # Choosing statistics
+##    st.sidebar.header("Select statistics: ")
+##    statistics = st.sidebar.multiselect('What statistic would you like calculated?', ('MEAN', 'MAX', 'MIN'))
+##    st.write(f"The statistics that will be calculated are: {', '.join(statistics)}")
+##
+##
+##    # Choosing geographic options
+##    st.sidebar.header("Select a geographic extent: ")
+##    geo_type = st.sidebar.radio("States/Counties or Cities:", ('States', 'States/Counties', 'Cities'))
+##
+##    if geo_type == "States":
+##        state_list = states_gdf.NAME.to_list()
+##        state_choice = st.sidebar.multiselect('Choose a state:', sorted(state_list))
+##        vector_src_name = 'US_States.geojson'
+##        fieldname = spatial_weights.vector_fieldmap[vector_src_name]
+##        zone_choice = {row[fieldname]:row['NAME'] for n,row in states_gdf.loc[states_gdf['NAME'].isin(state_choice)].iterrows()}
+##    elif geo_type == "States/Counties":
+##        state_list = states_gdf.NAME.to_list()
+##        state_choice = st.sidebar.selectbox('Choose a state:', sorted(state_list))
+##        counties_choice = st.sidebar.multiselect('Choose county/counties:',
+##                                                 sorted(counties_gdf.NAME.loc[counties_gdf.STATE == state_choice]))
+##        vector_src_name = 'US_Counties.geojson'
+##        fieldname = spatial_weights.vector_fieldmap[vector_src_name]
+##        zone_choice = {row[fieldname]:row['NAME'] for n,row in counties_gdf.loc[counties_gdf['NAME'].isin(counties_choice)].iterrows()}
+##    elif geo_type == "Cities":
+##        cities_choice = st.sidebar.multiselect('Choose city/cities:', sorted(cities_gdf.NAME))
+##        vector_src_name = 'US_Cities.geojson'
+##        fieldname = spatial_weights.vector_fieldmap[vector_src_name]
+##        zone_choice = {row[fieldname]:row['NAME'] for n,row in cities_gdf.loc[cities_gdf['NAME'].isin(cities_choice)].iterrows()}
+##    st.write("\t{0}: {1}".format(geo_type, list(zone_choice.values())))
+##
+##
+##    plot_it = st.checkbox("Plot Data")
+##    if starting_date and ending_date and tracer_selections and statistics:
+##        submit = st.form_submit_button(label='Submit')
+##    if submit:
+##        with st.spinner('Exporting data...'):
+##
+##            # Process data
+##            st.write('Process initiated at %s' %time.ctime())
+##            tic = time.time()
+##            zone_df_dict, out_files = analyze_data(in_dataset,
+##                                                    starting_date,
+##                                                    ending_date,
+##                                                    time_agg_dict[time_aggregation],
+##                                                    [data_vars_dict[tracer] for tracer in tracer_selections],
+##                                                    statistics,
+##                                                    vector_src_name,
+##                                                    zone_choice)
+##            if plot_it:
+##                # Create Plot
+##                tic = time.time()
+##                import matplotlib.pyplot as plt
+##                plt = plot_data(zone_names=zone_choice,
+##                                zone_df_dict=zone_df_dict,
+##                                save_plot=False,
+##                                stats=statistics)
+##                st.pyplot(plt)
+##                st.write('Plot generated in %3.2f seconds' %(time.time()-tic))
+##
+##
+##            # Zip up files if more than one CSV is output
+##            if len(out_files) > 1:
+##                zipped_file = out_dir / 'AQ_{0}.zip'.format(time.strftime('%Y-%m-%d_%H%M%S'))
+##                with zipfile.ZipFile(zipped_file, 'w') as f:
+##                    for file in out_files:
+##                        f.write(file, os.path.basename(file))
+##
+##                with open(str(zipped_file), "rb") as fp:
+##                    btn = st.download_button(
+##                        label="Download data as CSVs in ZIP format",
+##                        data=fp,
+##                        file_name=zipped_file.name,
+##                        mime="application/zip"
+##                    )
+##
+##            else:
+##                out_file = out_files[0]
+##                with open(out_file, "r") as fp:
+##                    btn = st.download_button(
+##                        label="Download data as CSV",
+##                        data=fp,
+##                        file_name=os.path.basename(out_file),
+##                        mime="text/plain",
+##                        )
+##
+##        st.success('Done!')
 
 # Add button to query data
 with st.container():
-    if st.sidebar.button("Run query"):
+    if st.sidebar.button("Run Query for data download"):
         if starting_date and ending_date and tracer_selections and statistics:
             with st.spinner('Exporting data...'):
 
                 # Process data
-                tic = time.time()
                 st.write('Process initiated at %s' %time.ctime())
-                zone_df_dict, out_files = main(
-                        in_dataset = in_dataset,
-                        start_time = starting_date,
-                        end_time = ending_date,
-                        resample_time_period = time_agg_dict[time_aggregation],
-                        Variables = [data_vars_dict[tracer] for tracer in tracer_selections],
-                        stats = statistics,
-                        vector_src_name=vector_src_name,
-                        zone_names = zone_choice)
-                st.write('Process completed in %3.2f seconds' %(time.time()-tic))
+                tic = time.time()
+                zone_df_dict, out_files = analyze_data(in_dataset,
+                                                        starting_date,
+                                                        ending_date,
+                                                        time_agg_dict[time_aggregation],
+                                                        [data_vars_dict[tracer] for tracer in tracer_selections],
+                                                        statistics,
+                                                        vector_src_name,
+                                                        zone_choice)
+                st.write('Process completed in {0:3.2f} seconds'.format(time.time()-tic))
 
                 # Zip up files if more than one CSV is output
                 if len(out_files) > 1:
@@ -245,23 +373,22 @@ with st.container():
 
 # Add a plot to the existing data
 with st.container():
-    if st.sidebar.button("Plot Data"):
+    if st.sidebar.button("Plot Selection"):
         if starting_date and ending_date and tracer_selections and statistics:
             with st.spinner('Processing data...'):
 
                 # Process data
-                tic = time.time()
                 st.write('Process initiated at %s' %time.ctime())
-                zone_df_dict, out_files = main(
-                        in_dataset = in_dataset,
-                        start_time = starting_date,
-                        end_time = ending_date,
-                        resample_time_period = time_agg_dict[time_aggregation],
-                        Variables = [data_vars_dict[tracer] for tracer in tracer_selections],
-                        stats = statistics,
-                        vector_src_name=vector_src_name,
-                        zone_names = zone_choice)
-                st.write('Process completed in %3.2f seconds' %(time.time()-tic))
+                tic = time.time()
+                zone_df_dict, out_files = analyze_data(in_dataset,
+                                                        starting_date,
+                                                        ending_date,
+                                                        time_agg_dict[time_aggregation],
+                                                        [data_vars_dict[tracer] for tracer in tracer_selections],
+                                                        statistics,
+                                                        vector_src_name,
+                                                        zone_choice)
+                st.write('Process completed in {0:3.2f} seconds'.format(time.time()-tic))
 
                 # Create Plot
                 tic = time.time()

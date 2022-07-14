@@ -39,17 +39,17 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 
-import osgeo
-from osgeo import gdal
-from osgeo import ogr
-from osgeo import osr
-from osgeo import gdalconst
-from osgeo.gdal_array import *                # Assists in using BandWriteArray, BandReadAsArray, and CopyDatasetInfo
-
-# Library options
-sys.dont_write_bytecode = True
-gdal.UseExceptions()                                                            # this allows GDAL to throw Python Exceptions
-gdal.PushErrorHandler('CPLQuietErrorHandler')
+##import osgeo
+##from osgeo import gdal
+##from osgeo import ogr
+##from osgeo import osr
+##from osgeo import gdalconst
+##from osgeo.gdal_array import *                # Assists in using BandWriteArray, BandReadAsArray, and CopyDatasetInfo
+##
+### Library options
+##sys.dont_write_bytecode = True
+##gdal.UseExceptions()                                                            # this allows GDAL to throw Python Exceptions
+##gdal.PushErrorHandler('CPLQuietErrorHandler')
 
 # Import grid information from the grid_info.py script
 path_root = Path(__file__).parents[0]
@@ -331,12 +331,16 @@ def plot_data(zone_names=[], zone_df_dict={}, save_plot=False, stats=[]):
                 if 'MEAN' in plot_col:
                     ax.plot(out_df[plot_col],
                             color=colors[i],
-                            label=zone_label) # label='_nolegend_',
+                            label='{0} (mean)'.format(zone_label)) # label='_nolegend_',
                 else:
+                    if 'MIN' in plot_col:
+                        stat_label = 'minimum'
+                    if 'MAX' in plot_col:
+                        stat_label = 'maximum'
                     ax.plot(out_df[plot_col],
-                            color='grey',
+                            color=colors[i],
                             linestyle='dashed',
-                            label='_nolegend_')
+                            label='{0} ({1})'.format(zone_label, stat_label))  # color='grey', label='_nolegend_'
             i+=1
 
         ax.set_ylabel(var_root)
