@@ -365,7 +365,6 @@ with st.container():
                             file_name=os.path.basename(out_file),
                             mime="text/plain",
                             )
-
             st.success('Done!')
 
         else:
@@ -399,7 +398,6 @@ with st.container():
                                 stats=statistics)
                 st.pyplot(plt)
                 st.write('Plot generated in %3.2f seconds' %(time.time()-tic))
-            st.success('Done!')
 
         else:
             st.sidebar.write("Please finish selecting data")

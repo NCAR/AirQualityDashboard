@@ -112,7 +112,7 @@ OutGTiff_template = os.path.abspath(out_dir / 'spatialweights_{zone_name}.tif')
 time_agg_dict = {"Daily":'1D',
                     "Weekly":'W-SUN',
                     "Monthly":'MS',
-                    "Yearly":'AS,'}
+                    "Yearly":'AS',}
 
 # Save output files to Zip, if more than one output CSV is created. Only works in __main__
 zipped_output = True
