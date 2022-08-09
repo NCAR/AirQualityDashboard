@@ -1,2 +1,3 @@
 # Ignore the scratch directory
 scratch/
+Scripts/__pycache__/

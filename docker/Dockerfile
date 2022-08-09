@@ -29,7 +29,7 @@ RUN conda install -c conda-forge \
 EXPOSE 8501
 
 # Copy contents of entire repository to the app directory in the container
-COPY . /app
+#COPY . /app
 
 # Run `streamlit run streamlit_app.py`
 ENTRYPOINT [ "streamlit", "run" ]
