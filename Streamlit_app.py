@@ -31,6 +31,9 @@ from grid_tools import (main, plot_data, in_dataset, time_agg_dict)
 # Set wide mode
 st.set_page_config(layout='wide')
 
+# 9/8/2022 - Clear Cache
+st.experimental_singleton.clear()
+
 # --- Global Variables --- #
 
 # Find the path to this directory

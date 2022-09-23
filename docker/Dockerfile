@@ -25,6 +25,9 @@ RUN conda install -c conda-forge \
 	zarr \
 	keplergl
 
+#RUN pip uninstall streamlit
+#RUN pip install streamlit
+
 # Expose port for Streamlit
 EXPOSE 8501
 
@@ -34,3 +37,4 @@ EXPOSE 8501
 # Run `streamlit run streamlit_app.py`
 ENTRYPOINT [ "streamlit", "run" ]
 CMD ["Streamlit_app.py"]
+#CMD ["/bin/bash"]
