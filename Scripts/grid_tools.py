@@ -473,7 +473,6 @@ if __name__ == '__main__':
 
     # Zones should be passed as the ID and a label
     zone_names = {'06':'California', '08':'Colorado'}
-    #zone_names = {'06':'California'}
 
     # Variable subset
     tracer_selections = ['AQI_daily', 'CO_daily_avg']
