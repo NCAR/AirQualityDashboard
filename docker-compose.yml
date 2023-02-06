@@ -19,7 +19,7 @@ services:
     container_name: nginx
     restart: always
     build: ./nginx
-    ports:
+    prots:
       - "80:80"
     depends_on:
       - aq
