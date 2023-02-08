@@ -14,12 +14,12 @@ services:
       - /gis/air_quality/scratch:/app/scratch 
       - /gis/air_quality/app/AirQualityDashboard:/app
     command: streamlit run Streamlit_app.py             
-    
+   
   nginx:
     container_name: nginx
     restart: always
     build: ./nginx
-    prots:
-      - "80:80"
+    ports:
+      - "81:81"
     depends_on:
       - aq
