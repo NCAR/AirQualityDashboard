@@ -11,15 +11,15 @@ services:
       - "8501:8501"
     volumes:
       - /gis/air_quality/data:/app/Data/Model_Data:ro
-      - /gis/air_quality/scratch:/app/scratch 
+      - /gis/air_quality/scratch:/app/scratch
       - /gis/air_quality/app/AirQualityDashboard:/app
-    command: streamlit run Streamlit_app.py             
-   
+    command: streamlit run Streamlit_app.py
+
   nginx:
     container_name: nginx
     restart: always
     build: ./nginx
     ports:
-      - "81:81"
+      - "80:80"
     depends_on:
       - aq

@@ -26,3 +26,4 @@ EXPOSE 8501
 # WORKS ! CMD ["streamlit", "run", "Streamlit_app.py"]
 ENTRYPOINT ["streamlit", "run", "Streamlit_app.py"]
 #CMD ["/bin/bash"]
+
