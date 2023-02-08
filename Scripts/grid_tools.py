@@ -432,9 +432,9 @@ def generate_weights(vector_src, zone_names, gridder_obj, polygon_selected=False
 
     # Create array of the i and j indices
     iindexlist= [[item[1] for item in attribute] for attribute in other_attributes.values()]
-    i_index_arr = np.array([item for sublist in iindexlist for item in sublist], dtype=np.object)
+    i_index_arr = np.array([item for sublist in iindexlist for item in sublist], dtype=object)
     jindexlist = [[item[2] for item in attribute] for attribute in other_attributes.values()]
-    j_index_arr = np.array([item for sublist in jindexlist for item in sublist], dtype=np.object)
+    j_index_arr = np.array([item for sublist in jindexlist for item in sublist], dtype=object)
     del jindexlist, iindexlist, other_attributes, regridweights
 
     # Optionally write output spatial weight file (store for later)

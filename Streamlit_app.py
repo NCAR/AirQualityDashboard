@@ -78,7 +78,8 @@ def get_geojson(geojson_path):
 
 # Alternatively, you could pull geometry from GitHub, but this is slower:
 #    states = get_geojson("https://raw.githubusercontent.com/mcasali/AirQualityDashboard/master/Data/GIS/Boundaries/Geojsons/US_States.geojson")
-@st.cache
+#@st.cache
+@st.cache(allow_output_mutation=True)
 def open_geojsons():
     states = get_geojson(str(spatial_weights.poly_dir / 'US_States.geojson'))
     counties = get_geojson(str(spatial_weights.poly_dir / 'US_Counties.geojson'))

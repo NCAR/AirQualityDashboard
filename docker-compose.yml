@@ -20,6 +20,6 @@ services:
     restart: always
     build: ./nginx
     ports:
-      - "80:80"
+      - "81:81"
     depends_on:
       - aq
