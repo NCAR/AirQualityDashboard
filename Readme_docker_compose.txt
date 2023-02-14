@@ -21,11 +21,18 @@ To build the containers:
 		docker compose ps
 
 To run the container in interactive mode after building it:
-	docker run -it --entrypoint=bash -v /gis/air_quality/app/AirQualityDashboard:/app -v /gis/air_quality/app/Data/Model_Data:/app/Data/Model_Data:ro -v /gis/air_quality/scratch:/app/scratch  airqualitydashboard:latest
+	docker run -it \
+		--entrypoint=bash \
+		-v /gis/air_quality/app/AirQualityDashboard:/app \
+		-v /gis/air_quality/app/Data/Model_Data:/app/Data/Model_Data:ro \
+		-v /gis/air_quality/scratch:/app/scratch  \
+		airqualitydashboard:latest
 
 	For example, write requirements.txt file from inside interactive container:
 		root@53e530b3e633:/app# pip list --format=freeze > requirements.txt		
-	
+		root@53e530b3e633:/app# mamba env export > environment.yml
+		root@336bef5fb5c2:/app# chmod 775 environment.yml
+			
 Found at:
 	https://gist.github.com/ngtrieuvi92/f41b7ecaf6eb6ee18b927100d155bc97
 	
