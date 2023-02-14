@@ -32,7 +32,7 @@ from grid_tools import (main, plot_data, in_dataset, time_agg_dict)
 st.set_page_config(layout='wide')
 
 # 9/8/2022 - Clear Cache
-st.experimental_singleton.clear()
+#st.experimental_singleton.clear()
 
 # --- Global Variables --- #
 
@@ -71,7 +71,8 @@ pm25_daily_avg           : Daily average PM2.5 mass concentrations
 
 # functions
 
-@st.cache
+#@st.cache
+@st.cache_data
 def get_geojson(geojson_path):
     return gpd.read_file(geojson_path)
 
@@ -79,7 +80,8 @@ def get_geojson(geojson_path):
 # Alternatively, you could pull geometry from GitHub, but this is slower:
 #    states = get_geojson("https://raw.githubusercontent.com/mcasali/AirQualityDashboard/master/Data/GIS/Boundaries/Geojsons/US_States.geojson")
 #@st.cache
-@st.cache(allow_output_mutation=True)
+#@st.cache(allow_output_mutation=True)
+@st.cache_data
 def open_geojsons():
     states = get_geojson(str(spatial_weights.poly_dir / 'US_States.geojson'))
     counties = get_geojson(str(spatial_weights.poly_dir / 'US_Counties.geojson'))
@@ -89,7 +91,8 @@ def open_geojsons():
 states_gdf, counties_gdf, cities_gdf = open_geojsons()
 
 # Function to analyze the time series data
-@st.cache
+#@st.cache
+@st.cache_data
 def analyze_data(in_dataset, starting_date, ending_date, time_aggregation, Variables, statistics, vector_src_name, zone_choice):
     # Process data
     zone_df_dict, out_files = main(

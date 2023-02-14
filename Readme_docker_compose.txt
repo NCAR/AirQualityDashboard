@@ -12,13 +12,19 @@ To build the containers:
 		
 	To run the container in background:
 		$ docker compose up --detach
+		$ docker compose up -d
 		
 	To bring down the container:
 		docker compose down
 		
 	To check the running services:
 		docker compose ps
-		
+
+To run the container in interactive mode after building it:
+	docker run -it --entrypoint=bash -v /gis/air_quality/app/AirQualityDashboard:/app -v /gis/air_quality/app/Data/Model_Data:/app/Data/Model_Data:ro -v /gis/air_quality/scratch:/app/scratch  airqualitydashboard:latest
+
+	For example, write requirements.txt file from inside interactive container:
+		root@53e530b3e633:/app# pip list --format=freeze > requirements.txt		
 	
 Found at:
 	https://gist.github.com/ngtrieuvi92/f41b7ecaf6eb6ee18b927100d155bc97

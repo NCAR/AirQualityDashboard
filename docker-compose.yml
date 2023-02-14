@@ -4,7 +4,10 @@ services:
   aq:
     image: airqualitydashboard:latest
     container_name: airqualitydashboard
-    build: ./docker
+    #build: ./docker
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
     restart: always
     user: root
     ports:
@@ -13,7 +16,7 @@ services:
       - /gis/air_quality/data:/app/Data/Model_Data:ro
       - /gis/air_quality/scratch:/app/scratch
       - /gis/air_quality/app/AirQualityDashboard:/app
-    command: streamlit run Streamlit_app.py
+    #command: streamlit run Streamlit_app.py
 
   nginx:
     container_name: nginx
