@@ -88,22 +88,26 @@ def open_geojsons():
     cities = get_geojson(str(spatial_weights.poly_dir / 'US_Cities.geojson'))
     return states, counties, cities
 
-states_gdf, counties_gdf, cities_gdf = open_geojsons()
+states_gdf_all, counties_gdf_all, cities_gdf_all = open_geojsons()
+states_gdf = states_gdf_all[["NAME", "GEOID", "geometry"]]
+counties_gdf = counties_gdf_all[["NAME", "STATE", "GEOID", "geometry"]]
+cities_gdf = cities_gdf_all[["NAME", "GEOID10", "geometry"]]
 
 # Function to analyze the time series data
 #@st.cache
 @st.cache_data
-def analyze_data(in_dataset, starting_date, ending_date, time_aggregation, Variables, statistics, vector_src_name, zone_choice):
+def analyze_data(in_dataset, starting_date, ending_date, time_aggregation, Variables, statistics, vector_src_name,
+                 zone_choice):
     # Process data
     zone_df_dict, out_files = main(
-            in_dataset = in_dataset,
-            start_time = starting_date,
-            end_time = ending_date,
-            resample_time_period = time_aggregation,
-            Variables = Variables,
-            stats = statistics,
-            vector_src_name = vector_src_name,
-            zone_names = zone_choice)
+            in_dataset=in_dataset,
+            start_time=starting_date,
+            end_time=ending_date,
+            resample_time_period=time_aggregation,
+            Variables=Variables,
+            stats=statistics,
+            vector_src_name=vector_src_name,
+            zone_names=zone_choice)
     return zone_df_dict, out_files
 
 # Main page text
@@ -138,23 +142,6 @@ with st.expander("What are the tracers?"):
 with st.expander("Explore the Air Quality Data Dashboard Viewer"):
     st.write("Link to [Air Quality Dashboard Viewer](https://ncar.maps.arcgis.com/apps/dashboards/b7b795b14ed4428e953e558e180b6f75)")
 
-
-# Add map
-st.header("Analyze geographic data")
-
-
-# Kepler code
-with st.container():
-    geojson_option = st.selectbox('Choose data to display:', ('States', 'Counties', 'Cities'))
-    main_map = leafmap.Map(center=(38, -96), zoom=3, draw_control=False, measure_control=False)
-    geojson_dict = {"States": states_gdf, "Counties": counties_gdf, "Cities": cities_gdf}
-    main_map.add_gdf(geojson_dict[geojson_option], layer_name=geojson_option, zoom_to_layer=False)
-    main_map.to_streamlit()
-
-
-# Add summary
-st.header("Data request summary: \n")
-
 # Sidebar
 with st.container():
     st.sidebar.title("Selecting data:")
@@ -163,171 +150,127 @@ with st.container():
     st.sidebar.header("Select a time period: ")
     starting_date = st.sidebar.date_input("Starting date:", min_value=datetime(2005, 1, 1),
                                           max_value=datetime(2018, 12, 31), value=datetime(2005, 1, 1))
-    st.write(f'Starting date is: {starting_date}')
 
     ending_date = st.sidebar.date_input("Ending date:", min_value=datetime(2005, 1, 1),
                                         max_value=datetime(2018, 12, 31), value=datetime(2018, 12, 31))
-    st.write(f'Ending date is: {ending_date}')
-
 
     # Choosing time aggregation
     st.sidebar.header("Select a time aggregation: ")
     time_aggregation = st.sidebar.selectbox("Choose a time aggregation: ", ("Daily", "Weekly", "Monthly", "Yearly"))
 
-    st.write(f"The selected time aggregation is: {time_aggregation}")
-
-
     # Choosing tracers
     st.sidebar.header("Select tracers: ")
     tracer_selections = st.sidebar.multiselect('Choose one or many tracers:', list(data_vars_dict.keys()))
-    st.write(f"The tracers you have selected are: {', '.join(tracer_selections)}")
-
 
     # Choosing statistics
     st.sidebar.header("Select statistics: ")
     statistics = st.sidebar.multiselect('What statistic would you like calculated?', ('MEAN', 'MAX', 'MIN'))
-    st.write(f"The statistics that will be calculated are: {', '.join(statistics)}")
-
 
     # Choosing geographic options
     st.sidebar.header("Select a geographic extent: ")
     geo_type = st.sidebar.radio("States/Counties or Cities:", ('States', 'States/Counties', 'Cities'))
 
+    geojson_dict = {"States": states_gdf, "Counties": counties_gdf, "Cities": cities_gdf}
     if geo_type == "States":
         state_list = states_gdf.NAME.to_list()
         state_choice = st.sidebar.multiselect('Choose a state:', sorted(state_list))
         vector_src_name = 'US_States.geojson'
         fieldname = spatial_weights.vector_fieldmap[vector_src_name]
-        zone_choice = {row[fieldname]:row['NAME'] for n,row in states_gdf.loc[states_gdf['NAME'].isin(state_choice)].iterrows()}
+        zone_choice = {row[fieldname]: row['NAME'] for n, row in
+                       states_gdf.loc[states_gdf['NAME'].isin(state_choice)].iterrows()}
+
+        if len(state_choice) > 0:
+            last_id = len(state_choice) - 1
+            y = float(states_gdf[states_gdf.NAME == state_choice[last_id]].centroid.y)
+            x = float(states_gdf[states_gdf.NAME == state_choice[last_id]].centroid.x)
+            center = (y, x)
+            zoom = 5
+            new_state_gdf = states_gdf[states_gdf.NAME.isin(state_choice)]
+        else:
+            center = (38, -96)
+            zoom = 3
+            new_state_gdf = geojson_dict["States"]
+
+        main_map = leafmap.Map(center=center, zoom=zoom, draw_control=False, measure_control=False)
+        main_map.add_gdf(new_state_gdf, layer_name="States", zoom_to_layer=False)
+        main_map.to_streamlit()
+
     elif geo_type == "States/Counties":
-        state_list = states_gdf.NAME.to_list()
-        state_choice = st.sidebar.selectbox('Choose a state:', sorted(state_list))
-        counties_choice = st.sidebar.multiselect('Choose county/counties:',
-                                                 sorted(counties_gdf.NAME.loc[counties_gdf.STATE == state_choice]))
-        vector_src_name = 'US_Counties.geojson'
+        state_list2 = states_gdf.NAME.to_list()
+        state_choice2 = st.sidebar.multiselect('Choose a state:', sorted(state_list2), max_selections=1)
+        vector_src_name = 'US_States.geojson'
         fieldname = spatial_weights.vector_fieldmap[vector_src_name]
-        zone_choice = {row[fieldname]:row['NAME'] for n,row in counties_gdf.loc[counties_gdf['NAME'].isin(counties_choice)].iterrows()}
+        zone_choice = {row[fieldname]: row['NAME'] for n, row in
+                       states_gdf.loc[states_gdf['NAME'].isin(state_choice2)].iterrows()}
+
+        if len(state_choice2) > 0:
+            last_id2 = len(state_choice2) - 1
+            y = float(states_gdf[states_gdf.NAME == state_choice2[last_id2]].centroid.y)
+            x = float(states_gdf[states_gdf.NAME == state_choice2[last_id2]].centroid.x)
+            center = (y, x)
+            zoom = 5
+            new_counties_gdf = geojson_dict["Counties"]
+        else:
+            center = (38, -96)
+            zoom = 3
+            new_counties_gdf = geojson_dict["Counties"]
+
+        # # Choose county
+        if state_choice2:
+            counties_choice = st.sidebar.multiselect(
+                'Choose county/counties:', sorted(counties_gdf.NAME.loc[counties_gdf.STATE == state_choice2[0]]))
+            del vector_src_name, fieldname, zone_choice
+            vector_src_name = 'US_Counties.geojson'
+            fieldname = spatial_weights.vector_fieldmap[vector_src_name]
+            zone_choice = {row[fieldname]: row['NAME'] for n, row in
+                           counties_gdf.loc[counties_gdf['NAME'].isin(counties_choice)].iterrows()}
+
+            if len(counties_choice) > 0:
+                last_id = len(counties_choice) - 1
+                y = float(counties_gdf[(counties_gdf.NAME == counties_choice[last_id]) &
+                                       (counties_gdf.STATE == state_choice2[0])].centroid.y)
+                x = float(counties_gdf[(counties_gdf.NAME == counties_choice[last_id]) &
+                                       (counties_gdf.STATE == state_choice2[0])].centroid.x)
+                center = (y, x)
+                zoom = 8
+                new_counties_gdf = counties_gdf[counties_gdf.NAME.isin(counties_choice)]
+
+        main_map = leafmap.Map(center=center, zoom=zoom, draw_control=False, measure_control=False)
+        main_map.add_gdf(new_counties_gdf, layer_name="Counties", zoom_to_layer=False)
+        main_map.to_streamlit()
+
     elif geo_type == "Cities":
         cities_choice = st.sidebar.multiselect('Choose city/cities:', sorted(cities_gdf.NAME))
         vector_src_name = 'US_Cities.geojson'
         fieldname = spatial_weights.vector_fieldmap[vector_src_name]
-        zone_choice = {row[fieldname]:row['NAME'] for n,row in cities_gdf.loc[cities_gdf['NAME'].isin(cities_choice)].iterrows()}
-    st.write("\t{0}: {1}".format(geo_type, list(zone_choice.values())))
+        zone_choice = {row[fieldname]: row['NAME'] for n, row in
+                       cities_gdf.loc[cities_gdf['NAME'].isin(cities_choice)].iterrows()}
 
-##with st.form(key="Selecting data"):
-##    st.sidebar.title("Selecting data:")
-##
-##    # Choosing dates in sidebar
-##    st.sidebar.header("Select a time period: ")
-##    starting_date = st.sidebar.date_input("Starting date:", min_value=datetime(2005, 1, 1),
-##                                          max_value=datetime(2018, 12, 31), value=datetime(2005, 1, 1))
-##    st.write(f'Starting date is: {starting_date}')
-##
-##    ending_date = st.sidebar.date_input("Ending date:", min_value=datetime(2005, 1, 1),
-##                                        max_value=datetime(2018, 12, 31), value=datetime(2018, 12, 31))
-##    st.write(f'Ending date is: {ending_date}')
-##
-##
-##    # Choosing time aggregation
-##    st.sidebar.header("Select a time aggregation: ")
-##    time_aggregation = st.sidebar.selectbox("Choose a time aggregation: ", ("Daily", "Weekly", "Monthly", "Yearly"))
-##
-##    st.write(f"The selected time aggregation is: {time_aggregation}")
-##
-##
-##    # Choosing tracers
-##    st.sidebar.header("Select tracers: ")
-##    tracer_selections = st.sidebar.multiselect('Choose one or many tracers:', list(data_vars_dict.keys()))
-##    st.write(f"The tracers you have selected are: {', '.join(tracer_selections)}")
-##
-##
-##    # Choosing statistics
-##    st.sidebar.header("Select statistics: ")
-##    statistics = st.sidebar.multiselect('What statistic would you like calculated?', ('MEAN', 'MAX', 'MIN'))
-##    st.write(f"The statistics that will be calculated are: {', '.join(statistics)}")
-##
-##
-##    # Choosing geographic options
-##    st.sidebar.header("Select a geographic extent: ")
-##    geo_type = st.sidebar.radio("States/Counties or Cities:", ('States', 'States/Counties', 'Cities'))
-##
-##    if geo_type == "States":
-##        state_list = states_gdf.NAME.to_list()
-##        state_choice = st.sidebar.multiselect('Choose a state:', sorted(state_list))
-##        vector_src_name = 'US_States.geojson'
-##        fieldname = spatial_weights.vector_fieldmap[vector_src_name]
-##        zone_choice = {row[fieldname]:row['NAME'] for n,row in states_gdf.loc[states_gdf['NAME'].isin(state_choice)].iterrows()}
-##    elif geo_type == "States/Counties":
-##        state_list = states_gdf.NAME.to_list()
-##        state_choice = st.sidebar.selectbox('Choose a state:', sorted(state_list))
-##        counties_choice = st.sidebar.multiselect('Choose county/counties:',
-##                                                 sorted(counties_gdf.NAME.loc[counties_gdf.STATE == state_choice]))
-##        vector_src_name = 'US_Counties.geojson'
-##        fieldname = spatial_weights.vector_fieldmap[vector_src_name]
-##        zone_choice = {row[fieldname]:row['NAME'] for n,row in counties_gdf.loc[counties_gdf['NAME'].isin(counties_choice)].iterrows()}
-##    elif geo_type == "Cities":
-##        cities_choice = st.sidebar.multiselect('Choose city/cities:', sorted(cities_gdf.NAME))
-##        vector_src_name = 'US_Cities.geojson'
-##        fieldname = spatial_weights.vector_fieldmap[vector_src_name]
-##        zone_choice = {row[fieldname]:row['NAME'] for n,row in cities_gdf.loc[cities_gdf['NAME'].isin(cities_choice)].iterrows()}
-##    st.write("\t{0}: {1}".format(geo_type, list(zone_choice.values())))
-##
-##
-##    plot_it = st.checkbox("Plot Data")
-##    if starting_date and ending_date and tracer_selections and statistics:
-##        submit = st.form_submit_button(label='Submit')
-##    if submit:
-##        with st.spinner('Exporting data...'):
-##
-##            # Process data
-##            st.write('Process initiated at %s' %time.ctime())
-##            tic = time.time()
-##            zone_df_dict, out_files = analyze_data(in_dataset,
-##                                                    starting_date,
-##                                                    ending_date,
-##                                                    time_agg_dict[time_aggregation],
-##                                                    [data_vars_dict[tracer] for tracer in tracer_selections],
-##                                                    statistics,
-##                                                    vector_src_name,
-##                                                    zone_choice)
-##            if plot_it:
-##                # Create Plot
-##                tic = time.time()
-##                import matplotlib.pyplot as plt
-##                plt = plot_data(zone_names=zone_choice,
-##                                zone_df_dict=zone_df_dict,
-##                                save_plot=False,
-##                                stats=statistics)
-##                st.pyplot(plt)
-##                st.write('Plot generated in %3.2f seconds' %(time.time()-tic))
-##
-##
-##            # Zip up files if more than one CSV is output
-##            if len(out_files) > 1:
-##                zipped_file = out_dir / 'AQ_{0}.zip'.format(time.strftime('%Y-%m-%d_%H%M%S'))
-##                with zipfile.ZipFile(zipped_file, 'w') as f:
-##                    for file in out_files:
-##                        f.write(file, os.path.basename(file))
-##
-##                with open(str(zipped_file), "rb") as fp:
-##                    btn = st.download_button(
-##                        label="Download data as CSVs in ZIP format",
-##                        data=fp,
-##                        file_name=zipped_file.name,
-##                        mime="application/zip"
-##                    )
-##
-##            else:
-##                out_file = out_files[0]
-##                with open(out_file, "r") as fp:
-##                    btn = st.download_button(
-##                        label="Download data as CSV",
-##                        data=fp,
-##                        file_name=os.path.basename(out_file),
-##                        mime="text/plain",
-##                        )
-##
-##        st.success('Done!')
+        if len(cities_choice) > 0:
+            last_id = len(cities_choice) - 1
+            y = float(cities_gdf[cities_gdf.NAME == cities_choice[last_id]].centroid.y)
+            x = float(cities_gdf[cities_gdf.NAME == cities_choice[last_id]].centroid.x)
+            center = (y, x)
+            zoom = 9
+            new_city_gdf = cities_gdf[cities_gdf.NAME.isin(cities_choice)]
+        else:
+            center = (38, -96)
+            zoom = 3
+            new_city_gdf = geojson_dict["Cities"]
+
+        main_map = leafmap.Map(center=center, zoom=zoom, draw_control=False, measure_control=False)
+        main_map.add_gdf(new_city_gdf, layer_name="Cities", zoom_to_layer=False)
+        main_map.to_streamlit()
+
+
+# Add summary
+st.header("Data request summary: \n")
+st.write(f'Starting date is: {starting_date}')
+st.write(f'Ending date is: {ending_date}')
+st.write(f"The selected time aggregation is: {time_aggregation}")
+st.write(f"The tracers you have selected are: {', '.join(tracer_selections)}")
+st.write(f"The statistics that will be calculated are: {', '.join(statistics)}")
+st.write("\t{0}: {1}".format(geo_type, list(set(list(zone_choice.values())))))
 
 # Add button to query data
 with st.container():
@@ -336,16 +279,16 @@ with st.container():
             with st.spinner('Exporting data...'):
 
                 # Process data
-                st.write('Process initiated at %s' %time.ctime())
+                st.write('Process initiated at %s' % time.ctime())
                 tic = time.time()
                 zone_df_dict, out_files = analyze_data(in_dataset,
-                                                        starting_date,
-                                                        ending_date,
-                                                        time_agg_dict[time_aggregation],
-                                                        [data_vars_dict[tracer] for tracer in tracer_selections],
-                                                        statistics,
-                                                        vector_src_name,
-                                                        zone_choice)
+                                                       starting_date,
+                                                       ending_date,
+                                                       time_agg_dict[time_aggregation],
+                                                       [data_vars_dict[tracer] for tracer in tracer_selections],
+                                                       statistics,
+                                                       vector_src_name,
+                                                       zone_choice)
                 st.write('Process completed in {0:3.2f} seconds'.format(time.time()-tic))
 
                 # Zip up files if more than one CSV is output
@@ -384,16 +327,16 @@ with st.container():
             with st.spinner('Processing data...'):
 
                 # Process data
-                st.write('Process initiated at %s' %time.ctime())
+                st.write('Process initiated at %s' % time.ctime())
                 tic = time.time()
                 zone_df_dict, out_files = analyze_data(in_dataset,
-                                                        starting_date,
-                                                        ending_date,
-                                                        time_agg_dict[time_aggregation],
-                                                        [data_vars_dict[tracer] for tracer in tracer_selections],
-                                                        statistics,
-                                                        vector_src_name,
-                                                        zone_choice)
+                                                       starting_date,
+                                                       ending_date,
+                                                       time_agg_dict[time_aggregation],
+                                                       [data_vars_dict[tracer] for tracer in tracer_selections],
+                                                       statistics,
+                                                       vector_src_name,
+                                                       zone_choice)
                 st.write('Process completed in {0:3.2f} seconds'.format(time.time()-tic))
 
                 # Create Plot
@@ -404,7 +347,7 @@ with st.container():
                                 save_plot=False,
                                 stats=statistics)
                 st.pyplot(plt)
-                st.write('Plot generated in %3.2f seconds' %(time.time()-tic))
+                st.write('Plot generated in %3.2f seconds' % (time.time()-tic))
 
         else:
             st.sidebar.write("Please finish selecting data")
