@@ -26,7 +26,7 @@ sys.path.insert(1, r'..\Scripts')
 from Scripts import grid_info
 from Scripts import spatial_weights
 from Scripts import grid_tools
-from grid_tools import (main, plot_data, in_dataset, time_agg_dict)
+from grid_tools import (main, plot_data, plot_data_plotly, in_dataset, time_agg_dict)
 
 # Set wide mode
 st.set_page_config(layout='wide')
@@ -340,13 +340,31 @@ with st.container():
                 st.write('Process completed in {0:3.2f} seconds'.format(time.time()-tic))
 
                 # Create Plot
+                mpl_plotting = False     #Matplotlib plotting. Works.
+                st_plotting = False      # Streamlit plotting. Not fully functional
+                plotly_plotting = True   # Plotly plotting. Works.
+
                 tic = time.time()
-                import matplotlib.pyplot as plt
-                plt = plot_data(zone_names=zone_choice,
-                                zone_df_dict=zone_df_dict,
-                                save_plot=False,
-                                stats=statistics)
-                st.pyplot(plt)
+                if mpl_plotting:
+                    import matplotlib.pyplot as plt
+                    plt = plot_data(zone_names=zone_choice,
+                                    zone_df_dict=zone_df_dict,
+                                    save_plot=False,
+                                    stats=statistics)
+                    st.pyplot(plt)
+
+                # Use built-in Streamlit plotting
+                elif st_plotting:
+                    #from grid_tools import plot_data_streamlit
+                    st.line_chart(next(iter(zone_df_dict.values())),
+                                    use_container_width=True,
+                                    height=300)
+                elif plotly_plotting:
+                    fig = plot_data_plotly(zone_names=zone_choice,
+                                    zone_df_dict=zone_df_dict,
+                                    save_plot=False,
+                                    stats=statistics)
+                    st.plotly_chart(fig, use_container_width=True, theme="streamlit")
                 st.write('Plot generated in %3.2f seconds' % (time.time()-tic))
 
         else:
