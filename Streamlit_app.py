@@ -209,7 +209,7 @@ with st.container():
             x = float(states_gdf[states_gdf.NAME == state_choice2[last_id2]].centroid.x)
             center = (y, x)
             zoom = 5
-            new_counties_gdf = geojson_dict["Counties"]
+            new_counties_gdf = counties_gdf[counties_gdf.STATE == state_choice2[0]]
         else:
             center = (38, -96)
             zoom = 3
