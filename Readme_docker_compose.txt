@@ -1,7 +1,9 @@
 To run the air quality dashboard using docker compose:
 
-	ksampson@compass:/gis/air_quality/app/AirQualityDashboard$ docker compose up
+	ksampson@compass:/gis/air_quality/app/AirQualityDashboard$ docker compose up -d
 	
+To run the container using bash and troubleshoot:
+	docker run -it --entrypoint=bash -p 8501:8501 -v /gis/air_quality/data:/app/Data/Model_Data:ro -v /gis/air_quality/scratch:/app/scratch -v /gis/air_quality/app/AirQualityDashboard:/app airqualitydashboard:latest
 	
 To build the containers:
 	Navigate to the directory containing the docker-compose.yml file and use:
