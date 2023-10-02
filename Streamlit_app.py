@@ -219,7 +219,7 @@ with st.container():
         if state_choice2:
             counties_choice = st.sidebar.multiselect(
                 'Choose county/counties:', sorted(counties_gdf.NAME.loc[counties_gdf.STATE == state_choice2[0]]))
-            del vector_src_name, fieldname, zone_choice
+            # del vector_src_name, fieldname, zone_choice
             vector_src_name = 'US_Counties.geojson'
             fieldname = spatial_weights.vector_fieldmap[vector_src_name]
             zone_choice = {row[fieldname]: row['NAME'] for n, row in
