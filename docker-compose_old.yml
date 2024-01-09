@@ -9,9 +9,18 @@ services:
       dockerfile: ./docker/Dockerfile
     restart: always
     ports:
-      - "65525:8501"
+      - "8501:8501"
     user: root
     volumes:
       - /gis/air_quality/data:/app/Data/Model_Data:ro
       - /gis/air_quality/scratch:/app/scratch
       - /gis/air_quality/app/AirQualityDashboard:/app
+
+  nginx:
+    container_name: nginx
+    restart: always
+    build: ./nginx
+    ports:
+      - "81:81"
+    depends_on:
+      - aq
