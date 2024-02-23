@@ -29,7 +29,7 @@ from Scripts import grid_tools
 from grid_tools import (main, plot_data, plot_data_plotly, in_dataset, time_agg_dict)
 
 # Set wide mode
-st.set_page_config(layout='wide')
+st.set_page_config(layout='wide', page_title="Air Quality Dashboard")
 
 # 9/8/2022 - Clear Cache
 #st.experimental_singleton.clear()
