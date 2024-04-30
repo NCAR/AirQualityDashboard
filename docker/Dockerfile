@@ -2,7 +2,7 @@ FROM condaforge/mambaforge:latest
 WORKDIR /app
 
 #Set environment variables 
-#ENV PATH="/home/docker/miniconda3/bin:${PATH}"
+ENV PATH="/home/docker/miniconda3/bin:${PATH}"
 
 # Copy environment file into container
 COPY environment.yml /app

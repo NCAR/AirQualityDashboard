@@ -140,7 +140,7 @@ with st.expander("What are the tracers?"):
     """)
 
 with st.expander("Explore the Air Quality Data Dashboard Viewer"):
-    st.write("Link to [Air Quality Dashboard Viewer](https://ncar.maps.arcgis.com/apps/dashboards/b7b795b14ed4428e953e558e180b6f75)")
+    st.write("Link to [Air Quality Dashboard Viewer](https://ncar.maps.arcgis.com/apps/dashboards/9a97650dc77b4f7192b99ea9bef36a21)")
 
 # Sidebar
 with st.container():
