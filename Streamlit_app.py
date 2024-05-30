@@ -20,6 +20,7 @@ import leafmap.kepler as leafmap
 from datetime import datetime
 import time
 import zipfile
+import base64
 
 # Import grid information from the grid_info.py script
 sys.path.insert(1, r'..\Scripts')
@@ -29,7 +30,24 @@ from Scripts import grid_tools
 from grid_tools import (main, plot_data, plot_data_plotly, in_dataset, time_agg_dict)
 
 # Set wide mode
-st.set_page_config(layout='wide', page_title="Air Quality Dashboard")
+st.set_page_config(layout='wide', page_title="Air Quality Dashboard",
+                   menu_items={"About": """This dashboard was created by the GIS Program at NSF NCAR, whose mission is
+                                to advance actionable and convergent Earth System science through geographic information
+                                science and technology, geospatial analytics, and geovisualization. Our team of
+                                geographers and data scientists work on spatial data and systems interoperability, 
+                                solve geographic problems related to weather, water, climate and society, and improve
+                                science communication with GIS. \n\n The dashboard distributes data from the Community
+                                Multiscale Air Quality (CMAQ) model which is a comprehensive multipollutant air quality
+                                modeling system developed and maintained by the US Environmental Protection Agency's 
+                                (EPA) Office of Research and Development (ORD). We used CMAQ to simulate the gridded
+                                distribution of ozone, precursor gasses, fine particulate matter (PM2.5), aerosol
+                                chemical composition, and aerosol optical properties at 12 x 12 km2 over the CONUS from
+                                1 Jan 2005 to 31 Dec 2018. The meteorological fields required to drive CMAQ were also
+                                simulated at 12 x 12 km2 grid spacing using the Weather Research and Forecasting Model
+                                (WRF) that uses a larger domain than CMAQ with 481 and 369 grid points in the
+                                longitudinal and latitudinal directions, respectively, and 43 vertical levels
+                                stretching from the surface to 50 hPa.\n\n Please forward questions to the 
+                                [GIS Program at NSF NCAR](https://gis.ucar.edu/form/contact)"""})
 
 # 9/8/2022 - Clear Cache
 #st.experimental_singleton.clear()
@@ -111,7 +129,9 @@ def analyze_data(in_dataset, starting_date, ending_date, time_aggregation, Varia
     return zone_df_dict, out_files
 
 # Main page text
-st.title("Air Quality Index User Dashboard")
+st.title("Air Quality Index Dashboard")
+# st.header("Created by the GIS Program", divider="blue")
+st.subheader("Created by the GIS Program", divider="blue")
 
 with st.expander("How to use this dashboard"):
     st.write("""
@@ -120,8 +140,9 @@ with st.expander("How to use this dashboard"):
     3. Choose one or many air quality tracers. \n
     4. Choose the type of statistic used for the data aggregation. \n
     5. Choose one or many geographic locations. Options include choosing an entire state, multiple counties, or urban areas.  \n
-    6. A download button will appear. Click to download the results in CSV format.
-    7. Additional plots will appear below the download area. These plots show previews of the selected data. """)
+    6. A download button will appear. Click to download the results in CSV format. \n
+    7. Additional plots will appear below the download area. These plots show previews of the selected data. \n
+    [Contact Us](https://gis.ucar.edu/form/contact)""")
 
 with st.expander("What are the tracers?"):
     st.write("""
@@ -144,6 +165,24 @@ with st.expander("Explore the Air Quality Data Dashboard Viewer"):
 
 # Sidebar
 with st.container():
+    st.sidebar.markdown(
+        """<p align="center"> <a href="https://ncar.ucar.edu/">
+        <img src="data:image/png;base64,{}" width="225">
+        </a></p>""".format(
+            base64.b64encode(open("Data/Logos/NSF-NCAR_Lockup-UCAR-Light_102523.png", "rb").read()).decode()
+        ),
+        unsafe_allow_html=True,
+    )
+    st.sidebar.markdown(
+        """<p align="center"> <a href="https://gis.ucar.edu/">
+        <img src="data:image/png;base64,{}" width="200">
+        </a></p>""".format(
+            base64.b64encode(open("Data/Logos/GIS_Logo.png", "rb").read()).decode()
+        ),
+        unsafe_allow_html=True,
+    )
+
+    st.sidebar.title("")
     st.sidebar.title("Selecting data:")
 
     # Choosing dates in sidebar
