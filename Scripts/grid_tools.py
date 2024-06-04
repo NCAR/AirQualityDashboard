@@ -592,9 +592,13 @@ if __name__ == '__main__':
 
     # The zone dataset and feature name to test
     vector_src_name = 'US_States.geojson'
+    #vector_src_name = 'US_Counties.geojson'
+    #vector_src_name = 'US_Cities.geojson'
 
     # Zones should be passed as the ID and a label
     zone_names = {'06':'California', '08':'Colorado'}
+    #zone_names = {'06037':'Los Angeles', '08031':'Denver'}
+    #zone_names = {'51445':'Los Angeles--Long Beach--Anaheim, CA', '23527':'Denver--Aurora, CO'}
 
     # Variable subset
     tracer_selections = ['AQI_daily', 'CO_daily_avg']
@@ -625,7 +629,9 @@ if __name__ == '__main__':
             end_time = ending_date,
             resample_time_period = time_agg_dict[time_aggregation],
             Variables = tracer_selections,
-            stats = statistics)
+            stats = statistics,
+            vector_src_name=vector_src_name,
+            zone_names=zone_names)
 
 
     # TEST TO SAVE MULTIPLE CSVs TO ZIP
@@ -637,7 +643,7 @@ if __name__ == '__main__':
 
 
     # Create Plot
-    save_plot = True
+    save_plot = False
     show_plot = True
     if save_plot or show_plot:
         plt = plot_data(zone_names=zone_names,

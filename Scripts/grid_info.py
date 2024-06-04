@@ -78,7 +78,7 @@ def grid_params():
             ncols = ds.RasterXSize
             nrows = ds.RasterYSize
             print('    Input Raster Size: {0} x {1} x {2}'.format(ncols, nrows, ds.RasterCount))
-            print('    Projection of input raster: {0}'.format(InRaster.GetProjection()))
+            print('    Projection of input raster: {0}'.format(ds.GetProjection()))
 
             x00, DX, xskew, y00, yskew, DY = ds.GetGeoTransform()
             grid_proj4 = get_projection_from_raster(ds).ExportToProj4()
