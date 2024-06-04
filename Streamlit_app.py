@@ -131,7 +131,7 @@ def analyze_data(in_dataset, starting_date, ending_date, time_aggregation, Varia
 # Main page text
 st.title("Air Quality Index Dashboard")
 # st.header("Created by the GIS Program", divider="blue")
-st.subheader("Created by the GIS Program", divider="blue")
+st.subheader("Created by the NCAR GIS Program", divider="blue")
 
 with st.expander("How to use this dashboard"):
     st.write("""
