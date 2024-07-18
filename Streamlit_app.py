@@ -47,7 +47,11 @@ st.set_page_config(layout='wide', page_title="Air Quality Dashboard",
                                 (WRF) that uses a larger domain than CMAQ with 481 and 369 grid points in the
                                 longitudinal and latitudinal directions, respectively, and 43 vertical levels
                                 stretching from the surface to 50 hPa.\n\n Please forward questions to the 
-                                [GIS Program at NSF NCAR](https://gis.ucar.edu/form/contact)"""})
+                                [GIS Program at NSF NCAR](https://gis.ucar.edu/form/contact)\n\n Citation information:
+                                \n\n If you have used this dashboard to produce information that was used in a publication
+                                or report, please acknowledge our site using the following recommended 
+                                citation: \n\n Sampson, K., & Casali, M. (2024). Air Quality Index Dashboard. UCAR/NCAR 
+                                - Research Application Laboratory GIS Program. https://doi.org/10.5065/RVX9-RR10"""})
 
 # 9/8/2022 - Clear Cache
 #st.experimental_singleton.clear()
