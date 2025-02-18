@@ -126,7 +126,7 @@ def main(in_dataset = in_dataset,
     Outputs:
         -
     '''
-    global regridweightnc
+    # global regridweightnc
 
     # Save spatially aggregated time-series to CSV?
     save_out_df = False
@@ -139,6 +139,7 @@ def main(in_dataset = in_dataset,
 
     # Specify the expected name of the regridding weight file
     vector_src = spatial_weights.vector_src_dict.get(vector_src_name, None)
+    regridweightnc = os.path.abspath(spatial_weights.weight_dir / '{grid}_{filename}_spatialweights.nc')
     regridweightnc = regridweightnc.format(grid = gridName, filename = os.path.basename(vector_src).replace(spatial_weights.poly_ext, ''))
 
     # Open spatial weight file to read pre-calculated spatial weights
